@@ -273,7 +273,7 @@ int main(void) {
         IVC *image = vc_image_new(video.width, video.height, 3, 255);
         IVC *image_hsv = vc_image_new(video.width, video.height, 3, 255);
         IVC *image_seg = vc_image_new(video.width, video.height, 1, 255);
-        IVC *image_close = vc_image_new(video.width, video.height, 1, 255);
+        IVC *image_open = vc_image_new(video.width, video.height, 1, 255);
         IVC *image_labels = vc_image_new(video.width, video.height, 1, 255);
 
         // Copia dados de imagem da estrutura cv::Mat para uma estrutura IVC
@@ -286,24 +286,24 @@ int main(void) {
         vc_hsv_segmentation(image_hsv, image_seg, hmin, hmax, smin, smax, vmin,
                             vmax);
 
-        // Fecho binário (dilatação seguida de erosão)
-        vc_binary_close(image_seg, image_close, kernel);
+        // Abertura binária (erosão seguida de dilatação)
+        vc_binary_open(image_seg, image_open, kernel);
 
-        // Etiquetagem de blobs após o fecho
+        // Etiquetagem de blobs após a abertura
         int nlabels = 0;
         OVC *blobs =
-            vc_binary_blob_labelling(image_close, image_labels, &nlabels);
+            vc_binary_blob_labelling(image_open, image_labels, &nlabels);
         bool label_on_border[256] = {false};
         if (blobs != NULL) {
             vc_binary_blob_info(image_labels, blobs, nlabels);
 
             // Marcar labels que tocam nas bordas (usando a imagem binária
             // original)
-            unsigned char *data_close = (unsigned char *)image_close->data;
+            unsigned char *data_open = (unsigned char *)image_open->data;
             unsigned char *data_labels = (unsigned char *)image_labels->data;
-            int width = image_close->width;
-            int height = image_close->height;
-            int bytesperline = image_close->bytesperline;
+            int width = image_open->width;
+            int height = image_open->height;
+            int bytesperline = image_open->bytesperline;
 
             auto mark_label = [&](int x, int y) {
                 if (x < 0 || x >= width || y < 0 || y >= height)
@@ -316,7 +316,7 @@ int main(void) {
             if (width >= 2 && height >= 2) {
                 // Borda superior (y = 0) -> vizinhança interna (y = 1)
                 for (int x = 0; x < width; x++) {
-                    if (data_close[0 * bytesperline + x] != 0) {
+                    if (data_open[0 * bytesperline + x] != 0) {
                         mark_label(x - 1, 1);
                         mark_label(x, 1);
                         mark_label(x + 1, 1);
@@ -325,7 +325,7 @@ int main(void) {
                 // Borda inferior (y = height - 1) -> vizinhança interna (y =
                 // height - 2)
                 for (int x = 0; x < width; x++) {
-                    if (data_close[(height - 1) * bytesperline + x] != 0) {
+                    if (data_open[(height - 1) * bytesperline + x] != 0) {
                         mark_label(x - 1, height - 2);
                         mark_label(x, height - 2);
                         mark_label(x + 1, height - 2);
@@ -333,7 +333,7 @@ int main(void) {
                 }
                 // Borda esquerda (x = 0) -> vizinhança interna (x = 1)
                 for (int y = 0; y < height; y++) {
-                    if (data_close[y * bytesperline + 0] != 0) {
+                    if (data_open[y * bytesperline + 0] != 0) {
                         mark_label(1, y - 1);
                         mark_label(1, y);
                         mark_label(1, y + 1);
@@ -342,7 +342,7 @@ int main(void) {
                 // Borda direita (x = width - 1) -> vizinhança interna (x =
                 // width - 2)
                 for (int y = 0; y < height; y++) {
-                    if (data_close[y * bytesperline + (width - 1)] != 0) {
+                    if (data_open[y * bytesperline + (width - 1)] != 0) {
                         mark_label(width - 2, y - 1);
                         mark_label(width - 2, y);
                         mark_label(width - 2, y + 1);
@@ -353,7 +353,7 @@ int main(void) {
 
         // Copia etiquetagem (IVC) para cv::Mat para visualização
         cv::Mat frame_aux(video.height, video.width, CV_8UC1);
-        memcpy(frame_aux.data, image_close->data,
+        memcpy(frame_aux.data, image_open->data,
                video.width * video.height * 1);
 
         // Copia dados de imagem da estrutura IVC para uma estrutura cv::Mat
@@ -434,7 +434,7 @@ int main(void) {
         vc_image_free(image);
         vc_image_free(image_hsv);
         vc_image_free(image_seg);
-        vc_image_free(image_close);
+        vc_image_free(image_open);
         vc_image_free(image_labels);
 
         // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
