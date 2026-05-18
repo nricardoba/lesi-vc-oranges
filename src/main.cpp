@@ -1,9 +1,9 @@
 #include <chrono>
 #include <iostream>
-#include <opencv2\core.hpp>
-#include <opencv2\highgui.hpp>
-#include <opencv2\opencv.hpp>
-#include <opencv2\videoio.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/opencv.hpp>
+#include <opencv2/videoio.hpp>
 #include <string>
 
 extern "C" {
@@ -37,7 +37,7 @@ void vc_timer(void) {
 
 int main(void) {
     // Vídeo
-    char videofile[20] = "video.avi";
+    char videofile[20] = "../input/video.avi";
     cv::VideoCapture capture;
     struct {
         int width, height;
