@@ -237,6 +237,16 @@ int main(void) {
     cv::namedWindow("VC - VIDEO", cv::WINDOW_AUTOSIZE);
     cv::namedWindow("VC - VIDEO AUX", cv::WINDOW_AUTOSIZE);
 
+    auto classify_blob = [&](double area_mm2) -> const char * {
+        if (area_mm2 < area_extra_max_mm2)
+            return "EXTRA";
+        if (area_mm2 < area_cat1_max_mm2)
+            return "CATEGORIA 1";
+        if (area_mm2 < area_cat2_max_mm2)
+            return "CATEGORIA 2";
+        return "CATEGORIA 3";
+    };
+
     /* Inicia o timer */
     vc_timer();
 
@@ -356,6 +366,7 @@ int main(void) {
         Detection detections[MAX_DETECTIONS];
         int ndets = 0;
         if (blobs != NULL) {
+            int category_counts[4] = {0, 0, 0, 0};
             for (int i = 0; i < nlabels; i++) {
                 if (blobs[i].area < area_min_px) {
                     continue;
