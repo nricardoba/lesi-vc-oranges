@@ -57,6 +57,7 @@ typedef struct {
     double perimeter_mm;
     double diameter_mm;
     int calibre;
+    int printed;
 } Track;
 
 static Track *tracks = NULL;
@@ -234,12 +235,11 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
             tracks[ntracks].perimeter_mm =
                 (double)dets[i].perimeter_px * mm_per_px;
             tracks[ntracks].diameter_mm =
-                (area_mm2 > 0.0)
-                    ? (2.0 * std::sqrt(area_mm2 /
-                                       std::acos(-1.0))) // acos(-1.0) == PI
-                    : 0.0;
+                (area_mm2 > 0.0) ? (2.0 * std::sqrt(area_mm2 / std::acos(-1.0)))
+                                 : 0.0;
             tracks[ntracks].calibre =
                 calibre_from_diameter(tracks[ntracks].diameter_mm);
+            tracks[ntracks].printed = 0;
             dets[i].track_id = tracks[ntracks].id;
             ntracks++;
         }
@@ -534,6 +534,19 @@ int main(void) {
             }
             cv::putText(frame, blob_info, cv::Point(det->x, text_y),
                         cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
+
+            if (tr != NULL && tr->printed == 0) {
+                std::ostringstream term_stream;
+                term_stream << std::fixed << std::setprecision(1)
+                            << "ID:" << det->track_id << " A:" << area_mm2
+                            << "mm2 P:" << perimeter_mm
+                            << "mm D:" << diameter_mm << "mm C:" << calibre
+                            << " bbox: (" << det->x << "," << det->y << ","
+                            << det->width << "," << det->height << ") center: ("
+                            << det->xc << "," << det->yc << ")";
+                std::cout << term_stream.str() << "\n";
+                tr->printed = 1;
+            }
         }
 
         if (blobs != NULL) {
