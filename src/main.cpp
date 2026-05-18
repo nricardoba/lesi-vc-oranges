@@ -65,6 +65,9 @@ int main(void) {
 
     // Filtro por área mínima do blob em mm² (ajustar conforme necessário)
     const double area_min_mm2 = 3000.0;
+    const double area_extra_max_mm2 = 4500.0;
+    const double area_cat1_max_mm2 = 6500.0;
+    const double area_cat2_max_mm2 = 8500.0;
 
     /* Leitura de vídeo de um ficheiro */
     /* NOTA IMPORTANTE:
@@ -94,6 +97,16 @@ int main(void) {
     /* Cria uma janela para exibir o vídeo */
     cv::namedWindow("VC - VIDEO", cv::WINDOW_AUTOSIZE);
     cv::namedWindow("VC - VIDEO AUX", cv::WINDOW_AUTOSIZE);
+
+    auto classify_blob = [&](double area_mm2) -> const char * {
+        if (area_mm2 < area_extra_max_mm2)
+            return "EXTRA";
+        if (area_mm2 < area_cat1_max_mm2)
+            return "CATEGORIA 1";
+        if (area_mm2 < area_cat2_max_mm2)
+            return "CATEGORIA 2";
+        return "CATEGORIA 3";
+    };
 
     /* Inicia o timer */
     vc_timer();
@@ -212,6 +225,7 @@ int main(void) {
 
         // Desenha bounding boxes e centros de gravidade dos blobs
         if (blobs != NULL) {
+            int category_counts[4] = {0, 0, 0, 0};
             for (int i = 0; i < nlabels; i++) {
                 double area_mm2 =
                     static_cast<double>(blobs[i].area) * mm_per_px * mm_per_px;
@@ -222,6 +236,17 @@ int main(void) {
                 if (label_on_border[blobs[i].label]) {
                     continue;
                 }
+
+                int category = 3;
+                if (area_mm2 < area_extra_max_mm2)
+                    category = 0;
+                else if (area_mm2 < area_cat1_max_mm2)
+                    category = 1;
+                else if (area_mm2 < area_cat2_max_mm2)
+                    category = 2;
+                category_counts[category]++;
+
+                const char *category_name = classify_blob(area_mm2);
                 cv::rectangle(frame,
                               cv::Rect(blobs[i].x, blobs[i].y, blobs[i].width,
                                        blobs[i].height),
@@ -232,6 +257,7 @@ int main(void) {
                     static_cast<double>(blobs[i].perimeter) * mm_per_px;
                 std::ostringstream info_stream;
                 info_stream << std::fixed << std::setprecision(1)
+                            << category_name << " "
                             << "A:" << area_mm2 << "mm2 "
                             << "P:" << perimeter_mm << "mm";
                 std::string blob_info = info_stream.str();
@@ -243,6 +269,18 @@ int main(void) {
                             cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0),
                             1);
             }
+
+            std::string counts_text =
+                "EXTRA: " + std::to_string(category_counts[0]) +
+                "  C1: " + std::to_string(category_counts[1]) +
+                "  C2: " + std::to_string(category_counts[2]) +
+                "  C3: " + std::to_string(category_counts[3]);
+            cv::putText(frame, counts_text, cv::Point(20, 130),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
+            cv::putText(frame, counts_text, cv::Point(20, 130),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.8,
+                        cv::Scalar(255, 255, 255), 1);
+
             free(blobs);
         }
 
