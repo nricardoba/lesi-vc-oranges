@@ -459,6 +459,11 @@ int main(void) {
                     1.0, cv::Scalar(0, 0, 0), 2);
         cv::putText(frame, str, cv::Point(20, 125), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(255, 255, 255), 1);
+        str = std::string("LARANJAS NA FRAME: ").append(std::to_string(ndets));
+        cv::putText(frame, str, cv::Point(20, 150), cv::FONT_HERSHEY_SIMPLEX,
+                    1.0, cv::Scalar(0, 0, 0), 2);
+        cv::putText(frame, str, cv::Point(20, 150), cv::FONT_HERSHEY_SIMPLEX,
+                    1.0, cv::Scalar(255, 255, 255), 1);
 
         /* Define manualmente o tamanho das janelas (via redimensionamento da
          * imagem) */
