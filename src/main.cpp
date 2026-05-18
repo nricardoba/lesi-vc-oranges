@@ -240,7 +240,7 @@ int main(void) {
     const double mm_per_px = 55.0 / 280.0;
 
     // Filtro por área mínima do blob em mm² (ajustar conforme necessário)
-    const double area_min_mm2 = 3000.0;
+    const double area_min_mm2 = 2200.0;
     const int area_min_px = (int)(area_min_mm2 / (mm_per_px * mm_per_px) + 0.5);
 
     // Parâmetros de tracking
