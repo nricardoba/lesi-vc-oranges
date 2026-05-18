@@ -163,9 +163,20 @@ int main(void) {
         cv::putText(frame, str, cv::Point(20, 100), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(255, 255, 255), 1);
 
+        /* Define manualmente o tamanho das janelas (via redimensionamento da
+         * imagem) */
+        int window_width = 640;
+        int window_height = 360;
+
         /* Exibe a frame */
-        cv::imshow("VC - VIDEO", frame);
-        cv::imshow("VC - VIDEO AUX", frame_aux);
+        cv::Mat frame_display;
+        cv::Mat frame_aux_display;
+        cv::resize(frame, frame_display, cv::Size(window_width, window_height));
+        cv::resize(frame_aux, frame_aux_display,
+                   cv::Size(window_width, window_height), 0, 0,
+                   cv::INTER_NEAREST);
+        cv::imshow("VC - VIDEO", frame_display);
+        cv::imshow("VC - VIDEO AUX", frame_aux_display);
 
         /* Sai da aplicação, se o utilizador premir a tecla 'q' */
         key = cv::waitKey(1);
