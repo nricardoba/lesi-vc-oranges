@@ -237,15 +237,15 @@ int main(void) {
     cv::namedWindow("VC - VIDEO", cv::WINDOW_AUTOSIZE);
     cv::namedWindow("VC - VIDEO AUX", cv::WINDOW_AUTOSIZE);
 
-    auto classify_blob = [&](double area_mm2) -> const char * {
-        if (area_mm2 < area_extra_max_mm2)
-            return "EXTRA";
-        if (area_mm2 < area_cat1_max_mm2)
-            return "CATEGORIA 1";
-        if (area_mm2 < area_cat2_max_mm2)
-            return "CATEGORIA 2";
-        return "CATEGORIA 3";
-    };
+    // auto classify_blob = [&](double area_mm2) -> const char * {
+    //     if (area_mm2 < area_extra_max_mm2)
+    //         return "EXTRA";
+    //     if (area_mm2 < area_cat1_max_mm2)
+    //         return "CATEGORIA 1";
+    //     if (area_mm2 < area_cat2_max_mm2)
+    //         return "CATEGORIA 2";
+    //     return "CATEGORIA 3";
+    // };
 
     /* Inicia o timer */
     vc_timer();
@@ -476,20 +476,9 @@ int main(void) {
         cv::putText(frame, str, cv::Point(20, 150), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(255, 255, 255), 1);
 
-        /* Define manualmente o tamanho das janelas (via redimensionamento da
-         * imagem) */
-        int window_width = 640;
-        int window_height = 360;
-
-        /* Exibe a frame */
-        cv::Mat frame_display;
-        cv::Mat frame_aux_display;
-        cv::resize(frame, frame_display, cv::Size(window_width, window_height));
-        cv::resize(frame_aux, frame_aux_display,
-                   cv::Size(window_width, window_height), 0, 0,
-                   cv::INTER_NEAREST);
-        cv::imshow("VC - VIDEO", frame_display);
-        cv::imshow("VC - VIDEO AUX", frame_aux_display);
+        /* Exibe a frame (tamanho original) */
+        cv::imshow("VC - VIDEO", frame);
+        cv::imshow("VC - VIDEO AUX", frame_aux);
 
         /* Sai da aplicação, se o utilizador premir a tecla 'q' */
         key = cv::waitKey(1);
