@@ -164,6 +164,12 @@ int main(void) {
                 if (area_mm2 < area_min_mm2) {
                     continue;
                 }
+                // Ignora blobs que tocam nas bordas da imagem
+                if (blobs[i].x <= 0 || blobs[i].y <= 0 ||
+                    (blobs[i].x + blobs[i].width) >= video.width ||
+                    (blobs[i].y + blobs[i].height) >= video.height) {
+                    continue;
+                }
                 cv::rectangle(frame,
                               cv::Rect(blobs[i].x, blobs[i].y, blobs[i].width,
                                        blobs[i].height),
