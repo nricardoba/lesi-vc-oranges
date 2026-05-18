@@ -57,6 +57,7 @@ typedef struct {
     double perimeter_mm;
     double diameter_mm;
     int calibre;
+    int printed;
 } Track;
 
 static Track *tracks = NULL;
@@ -108,6 +109,72 @@ static int calibre_from_diameter(double diameter_mm) {
     if (diameter_mm >= 56.0)
         return 12;
     return 13;
+}
+
+static void swap_bgr_rgb(const unsigned char *src, int src_step,
+                         unsigned char *dst, int dst_step, int width,
+                         int height) {
+    if (src == NULL || dst == NULL || width <= 0 || height <= 0)
+        return;
+
+    if (src == dst && src_step == dst_step) {
+        for (int y = 0; y < height; y++) {
+            unsigned char *row = dst + y * dst_step;
+            for (int x = 0; x < width; x++) {
+                int idx = x * 3;
+                unsigned char tmp = row[idx];
+                row[idx] = row[idx + 2];
+                row[idx + 2] = tmp;
+            }
+        }
+        return;
+    }
+
+    for (int y = 0; y < height; y++) {
+        const unsigned char *src_row = src + y * src_step;
+        unsigned char *dst_row = dst + y * dst_step;
+        for (int x = 0; x < width; x++) {
+            int idx = x * 3;
+            dst_row[idx] = src_row[idx + 2];
+            dst_row[idx + 1] = src_row[idx + 1];
+            dst_row[idx + 2] = src_row[idx];
+        }
+    }
+}
+
+static void draw_circle_bgr(unsigned char *data, int width, int height,
+                            int step, int cx, int cy, int radius,
+                            unsigned char b, unsigned char g, unsigned char r,
+                            int thickness) {
+    if (data == NULL || width <= 0 || height <= 0 || radius <= 0)
+        return;
+
+    int r2 = radius * radius;
+    int inner_r = (thickness >= 0) ? (radius - thickness) : 0;
+    if (inner_r < 0)
+        inner_r = 0;
+    int inner2 = inner_r * inner_r;
+
+    for (int y = cy - radius; y <= cy + radius; y++) {
+        if (y < 0 || y >= height)
+            continue;
+        int dy = y - cy;
+        int dy2 = dy * dy;
+        for (int x = cx - radius; x <= cx + radius; x++) {
+            if (x < 0 || x >= width)
+                continue;
+            int dx = x - cx;
+            int d2 = dx * dx + dy2;
+            if (d2 > r2)
+                continue;
+            if (thickness >= 0 && d2 < inner2)
+                continue;
+            unsigned char *pixel = data + y * step + x * 3;
+            pixel[0] = b;
+            pixel[1] = g;
+            pixel[2] = r;
+        }
+    }
 }
 
 static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
@@ -168,12 +235,11 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
             tracks[ntracks].perimeter_mm =
                 (double)dets[i].perimeter_px * mm_per_px;
             tracks[ntracks].diameter_mm =
-                (area_mm2 > 0.0)
-                    ? (2.0 * std::sqrt(area_mm2 /
-                                       std::acos(-1.0))) // acos(-1.0) == PI
-                    : 0.0;
+                (area_mm2 > 0.0) ? (2.0 * std::sqrt(area_mm2 / std::acos(-1.0)))
+                                 : 0.0;
             tracks[ntracks].calibre =
                 calibre_from_diameter(tracks[ntracks].diameter_mm);
+            tracks[ntracks].printed = 0;
             dets[i].track_id = tracks[ntracks].id;
             ntracks++;
         }
@@ -297,8 +363,9 @@ int main(void) {
 
         // Faça o seu código aqui...
         // Converte a frame de BGR (OpenCV) para RGB
-        cv::Mat frame_rgb;
-        cv::cvtColor(frame, frame_rgb, cv::COLOR_BGR2RGB);
+        cv::Mat frame_rgb(video.height, video.width, CV_8UC3);
+        swap_bgr_rgb(frame.data, (int)frame.step, frame_rgb.data,
+                     (int)frame_rgb.step, video.width, video.height);
 
         // Cria imagens IVC
         IVC *image = vc_image_new(video.width, video.height, 3, 255);
@@ -391,7 +458,8 @@ int main(void) {
         memcpy(frame_rgb.data, image->data, video.width * video.height * 3);
 
         // Converte de RGB de volta para BGR para visualização no OpenCV
-        cv::cvtColor(frame_rgb, frame, cv::COLOR_RGB2BGR);
+        swap_bgr_rgb(frame_rgb.data, (int)frame_rgb.step, frame.data,
+                     (int)frame.step, video.width, video.height);
 
         // Preparar deteções válidas
         Detection detections[MAX_DETECTIONS];
@@ -448,11 +516,11 @@ int main(void) {
                         : 0.0;
                 calibre = calibre_from_diameter(diameter_mm);
             }
-            cv::rectangle(frame,
-                          cv::Rect(det->x, det->y, det->width, det->height),
+            cv::rectangle(frame, cv::Point(det->x, det->y),
+                          cv::Point(det->x + det->width, det->y + det->height),
                           cv::Scalar(0, 255, 0), 2);
-            cv::circle(frame, cv::Point(det->xc, det->yc), 3,
-                       cv::Scalar(0, 0, 255), -1);
+            draw_circle_bgr(frame.data, frame.cols, frame.rows, (int)frame.step,
+                            det->xc, det->yc, 3, 0, 0, 255, -1);
             std::ostringstream info_stream;
             info_stream << std::fixed << std::setprecision(1)
                         << "ID:" << det->track_id << " A:" << area_mm2 << "mm2 "
@@ -466,6 +534,19 @@ int main(void) {
             }
             cv::putText(frame, blob_info, cv::Point(det->x, text_y),
                         cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
+
+            if (tr != NULL && tr->printed == 0) {
+                std::ostringstream term_stream;
+                term_stream << std::fixed << std::setprecision(1)
+                            << "ID:" << det->track_id << " A:" << area_mm2
+                            << "mm2 P:" << perimeter_mm
+                            << "mm D:" << diameter_mm << "mm C:" << calibre
+                            << " bbox: (" << det->x << "," << det->y << ","
+                            << det->width << "," << det->height << ") center: ("
+                            << det->xc << "," << det->yc << ")";
+                std::cout << term_stream.str() << "\n";
+                tr->printed = 1;
+            }
         }
 
         if (blobs != NULL) {
