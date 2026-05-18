@@ -1,15 +1,3 @@
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-//           INSTITUTO POLITÉCNICO DO CÁVADO E DO AVE
-//                          2025/2026
-//             ENGENHARIA DE SISTEMAS INFORMÁTICOS
-//                    VISÃO POR COMPUTADOR
-//
-//                          PROFESSOR:
-//             [  DUARTE DUQUE - dduque@ipca.pt  ]
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-// Desabilita (no MSVC++) warnings de funções não seguras (fopen, sscanf,
-// etc...)
 #define _CRT_SECURE_NO_WARNINGS
 
 #include "vc.h"
@@ -17,11 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-// FUNÇÕES: ALOCAR E LIBERTAR UMA IMAGEM
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-// Alocar memória para uma imagem
 IVC *vc_image_new(int width, int height, int channels, int levels) {
     IVC *image = (IVC *)malloc(sizeof(IVC));
 
@@ -45,7 +28,6 @@ IVC *vc_image_new(int width, int height, int channels, int levels) {
     return image;
 }
 
-// Libertar memória de uma imagem
 IVC *vc_image_free(IVC *image) {
     if (image != NULL) {
         if (image->data != NULL) {
@@ -60,11 +42,6 @@ IVC *vc_image_free(IVC *image) {
     return image;
 }
 
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-// FUNÇÕES: ESPAÇOS DE COR (RGB, HSV) E SEGMENTAÇÃO
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-// Converte de RGB para HSV
 int vc_rgb_to_hsv(IVC *src, IVC *dst) {
     unsigned char *datasrc = (unsigned char *)src->data;
     unsigned char *datadst = (unsigned char *)dst->data;
@@ -78,7 +55,6 @@ int vc_rgb_to_hsv(IVC *src, IVC *dst) {
     float max, min, delta;
     float hue, saturation, value;
 
-    // Verificação de erros
     if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL))
         return 0;
     if (dst->data == NULL)
@@ -92,27 +68,22 @@ int vc_rgb_to_hsv(IVC *src, IVC *dst) {
         for (x = 0; x < width; x++) {
             pos = y * bytesperline + x * channels;
 
-            // Normalizar RGB para [0, 1]
             rf = (float)datasrc[pos] / 255.0f;
             gf = (float)datasrc[pos + 1] / 255.0f;
             bf = (float)datasrc[pos + 2] / 255.0f;
 
-            // Calcular max e min dos três canais
             max = (rf > gf) ? ((rf > bf) ? rf : bf) : ((gf > bf) ? gf : bf);
             min = (rf < gf) ? ((rf < bf) ? rf : bf) : ((gf < bf) ? gf : bf);
             delta = max - min;
 
-            // Value = max
             value = max;
 
-            // Saturation
             if (max == 0.0f) {
                 saturation = 0.0f;
             } else {
                 saturation = delta / max;
             }
 
-            // Hue
             if (delta == 0.0f) {
                 hue = 0.0f;
             } else if (max == rf) {
@@ -122,23 +93,19 @@ int vc_rgb_to_hsv(IVC *src, IVC *dst) {
                 }
             } else if (max == gf) {
                 hue = 120.0f + 60.0f * (bf - rf) / delta;
-            } else { // max == bf
+            } else {
                 hue = 240.0f + 60.0f * (rf - gf) / delta;
             }
 
-            // Mapear H de [0, 360) para [0, 255], S de [0, 1] para [0, 255], V
-            // de [0, 1] para [0, 255]
-            datadst[pos] = (unsigned char)(hue / 360.0f * 255.0f);   // H
-            datadst[pos + 1] = (unsigned char)(saturation * 255.0f); // S
-            datadst[pos + 2] = (unsigned char)(value * 255.0f);      // V
+            datadst[pos] = (unsigned char)(hue / 360.0f * 255.0f);
+            datadst[pos + 1] = (unsigned char)(saturation * 255.0f);
+            datadst[pos + 2] = (unsigned char)(value * 255.0f);
         }
     }
 
     return 1;
 }
 
-// Segmentação de uma imagem HSV em função de intervalos de H, S e V
-// hmin,hmax = [0, 360]; smin,smax = [0, 100]; vmin,vmax = [0, 100]
 int vc_hsv_segmentation(IVC *src, IVC *dst, int hmin, int hmax, int smin,
                         int smax, int vmin, int vmax) {
     unsigned char *datasrc = (unsigned char *)src->data;
@@ -155,7 +122,6 @@ int vc_hsv_segmentation(IVC *src, IVC *dst, int hmin, int hmax, int smin,
     int hmin_255, hmax_255, smin_255, smax_255, vmin_255, vmax_255;
     int in_h, in_s, in_v;
 
-    // Verificação de erros
     if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL))
         return 0;
     if (dst->data == NULL)
@@ -165,7 +131,6 @@ int vc_hsv_segmentation(IVC *src, IVC *dst, int hmin, int hmax, int smin,
     if ((src->channels != 3) || (dst->channels != 1))
         return 0;
 
-    // Intervalos válidos: H [0,360], S/V [0,100]
     if ((hmin < 0) || (hmin > 360) || (hmax < 0) || (hmax > 360))
         return 0;
     if ((smin < 0) || (smin > 100) || (smax < 0) || (smax > 100) ||
@@ -191,12 +156,9 @@ int vc_hsv_segmentation(IVC *src, IVC *dst, int hmin, int hmax, int smin,
             s = datasrc[pos_src + 1];
             v = datasrc[pos_src + 2];
 
-            // H é circular: se hmin > hmax, o intervalo cruza 0º
             if (hmin_255 <= hmax_255)
                 in_h = (h >= hmin_255 && h <= hmax_255);
-            else // caso hmin_255 > hmax_255 (vermelho), o h tem de estar entre
-                 // hmin_255 e o limite maximo ou o h tem de estar entre o
-                 // hmax_255 e o limite minimo
+            else
                 in_h = (h >= hmin_255 || h <= hmax_255);
 
             in_s = (s >= smin_255 && s <= smax_255);
@@ -209,11 +171,6 @@ int vc_hsv_segmentation(IVC *src, IVC *dst, int hmin, int hmax, int smin,
     return 1;
 }
 
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-// FUNÇÕES: OPERADORES MORFOLÓGICOS BINÁRIOS
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-// Dilatação binária
 int vc_binary_dilate(IVC *src, IVC *dst, int kernel) {
     unsigned char *datasrc = (unsigned char *)src->data;
     unsigned char *datadst = (unsigned char *)dst->data;
@@ -226,7 +183,6 @@ int vc_binary_dilate(IVC *src, IVC *dst, int kernel) {
     long int pos, posk;
     int has_white;
 
-    // Verificação de erros
     if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL))
         return 0;
     if (dst->data == NULL)
@@ -236,7 +192,6 @@ int vc_binary_dilate(IVC *src, IVC *dst, int kernel) {
     if ((src->channels != 1) || (src->channels != dst->channels))
         return 0;
 
-    // O kernel tem de ser ímpar e maior ou igual a 3
     if (kernel < 3)
         kernel = 3;
     if ((kernel % 2) == 0)
@@ -244,13 +199,11 @@ int vc_binary_dilate(IVC *src, IVC *dst, int kernel) {
 
     for (y = 0; y < height; y++) {
         for (x = 0; x < width; x++) {
-            // Calcular limites da vizinhança
             xmin = x - kernel / 2;
             xmax = x + kernel / 2;
             ymin = y - kernel / 2;
             ymax = y + kernel / 2;
 
-            // Proteger contra as bordas da imagem
             if (xmin < 0)
                 xmin = 0;
             if (ymin < 0)
@@ -262,7 +215,6 @@ int vc_binary_dilate(IVC *src, IVC *dst, int kernel) {
 
             has_white = 0;
 
-            // Percorrer a vizinhança (kernel)
             for (ky = ymin; ky <= ymax; ky++) {
                 for (kx = xmin; kx <= xmax; kx++) {
                     posk = ky * bytesperline + kx * channels;
@@ -277,7 +229,6 @@ int vc_binary_dilate(IVC *src, IVC *dst, int kernel) {
                 }
             }
 
-            // Escrever no píxel central
             pos = y * bytesperline + x * channels;
             datadst[pos] = has_white ? 255 : 0;
         }
@@ -286,7 +237,6 @@ int vc_binary_dilate(IVC *src, IVC *dst, int kernel) {
     return 1;
 }
 
-// Erosão binária
 int vc_binary_erode(IVC *src, IVC *dst, int kernel) {
     unsigned char *datasrc = (unsigned char *)src->data;
     unsigned char *datadst = (unsigned char *)dst->data;
@@ -299,7 +249,6 @@ int vc_binary_erode(IVC *src, IVC *dst, int kernel) {
     long int pos, posk;
     int has_black;
 
-    // Verificação de erros
     if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL))
         return 0;
     if (dst->data == NULL)
@@ -309,7 +258,6 @@ int vc_binary_erode(IVC *src, IVC *dst, int kernel) {
     if ((src->channels != 1) || (src->channels != dst->channels))
         return 0;
 
-    // O kernel tem de ser ímpar e maior ou igual a 3
     if (kernel < 3)
         kernel = 3;
     if ((kernel % 2) == 0)
@@ -317,13 +265,11 @@ int vc_binary_erode(IVC *src, IVC *dst, int kernel) {
 
     for (y = 0; y < height; y++) {
         for (x = 0; x < width; x++) {
-            // Calcular limites da vizinhança
             xmin = x - kernel / 2;
             xmax = x + kernel / 2;
             ymin = y - kernel / 2;
             ymax = y + kernel / 2;
 
-            // Proteger contra as bordas da imagem
             if (xmin < 0)
                 xmin = 0;
             if (ymin < 0)
@@ -335,7 +281,6 @@ int vc_binary_erode(IVC *src, IVC *dst, int kernel) {
 
             has_black = 0;
 
-            // Percorrer a vizinhança (kernel)
             for (ky = ymin; ky <= ymax; ky++) {
                 for (kx = xmin; kx <= xmax; kx++) {
                     posk = ky * bytesperline + kx * channels;
@@ -350,7 +295,6 @@ int vc_binary_erode(IVC *src, IVC *dst, int kernel) {
                 }
             }
 
-            // Escrever no píxel central
             pos = y * bytesperline + x * channels;
             datadst[pos] = has_black ? 0 : 255;
         }
@@ -359,12 +303,10 @@ int vc_binary_erode(IVC *src, IVC *dst, int kernel) {
     return 1;
 }
 
-// Abertura binária (Erosão seguida de Dilatação)
 int vc_binary_open(IVC *src, IVC *dst, int kernel) {
     IVC *tmp;
     int ret = 1;
 
-    // Verificação de erros
     if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL))
         return 0;
     if (dst->data == NULL)
@@ -388,17 +330,6 @@ int vc_binary_open(IVC *src, IVC *dst, int kernel) {
     return ret;
 }
 
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-// FUNÇÕES: ETIQUETAGEM DE BLOBS E CÁLCULO DE CARACTERÍSTICAS
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-// Etiquetagem de blobs
-// src        : Imagem binária de entrada
-// dst        : Imagem grayscale (irá conter as etiquetas)
-// nlabels    : Endereço de memória de uma variável, onde será armazenado o
-// número de etiquetas encontradas.
-// OVC*       : Retorna um array de estruturas de blobs (objectos),
-// com respectivas etiquetas. É necessário libertar posteriormente esta memória.
 OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
     unsigned char *datasrc = (unsigned char *)src->data;
     unsigned char *datadst = (unsigned char *)dst->data;
@@ -411,12 +342,10 @@ OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
     long int posX, posA, posB, posC, posD;
     int labeltable[256] = {0};
     int labelarea[256] = {0};
-    int label = 1; // Etiqueta inicial.
+    int label = 1;
     int num, tmplabel;
-    OVC *blobs; // Apontador para array de blobs (objectos) que será retornado
-                // desta função.
+    OVC *blobs;
 
-    // Verificação de erros
     if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL))
         return 0;
     if ((src->width != dst->width) || (src->height != dst->height) ||
@@ -425,19 +354,13 @@ OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
     if (channels != 1)
         return NULL;
 
-    // Copia dados da imagem binária para imagem grayscale
     memcpy(datadst, datasrc, bytesperline * height);
 
-    // Todos os pixéis de plano de fundo devem obrigatóriamente ter valor 0
-    // Todos os pixéis de primeiro plano devem obrigatóriamente ter valor 255
-    // Serão atribuídas etiquetas no intervalo [1,254]
-    // Este algoritmo está assim limitado a 254 labels
     for (i = 0, size = bytesperline * height; i < size; i++) {
         if (datadst[i] != 0)
             datadst[i] = 255;
     }
 
-    // Limpa os rebordos da imagem binária
     for (y = 0; y < height; y++) {
         datadst[y * bytesperline + 0 * channels] = 0;
         datadst[y * bytesperline + (width - 1) * channels] = 0;
@@ -447,20 +370,14 @@ OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
         datadst[(height - 1) * bytesperline + x * channels] = 0;
     }
 
-    // Efectua a etiquetagem
     for (y = 1; y < height - 1; y++) {
         for (x = 1; x < width - 1; x++) {
-            // Kernel:
-            // A B C
-            // D X
+            posA = (y - 1) * bytesperline + (x - 1) * channels;
+            posB = (y - 1) * bytesperline + x * channels;
+            posC = (y - 1) * bytesperline + (x + 1) * channels;
+            posD = y * bytesperline + (x - 1) * channels;
+            posX = y * bytesperline + x * channels;
 
-            posA = (y - 1) * bytesperline + (x - 1) * channels; // A
-            posB = (y - 1) * bytesperline + x * channels;       // B
-            posC = (y - 1) * bytesperline + (x + 1) * channels; // C
-            posD = y * bytesperline + (x - 1) * channels;       // D
-            posX = y * bytesperline + x * channels;             // X
-
-            // Se o pixel foi marcado
             if (datadst[posX] != 0) {
                 if ((datadst[posA] == 0) && (datadst[posB] == 0) &&
                     (datadst[posC] == 0) && (datadst[posD] == 0)) {
@@ -470,27 +387,21 @@ OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
                 } else {
                     num = 255;
 
-                    // Se A está marcado
                     if (datadst[posA] != 0)
                         num = labeltable[datadst[posA]];
-                    // Se B está marcado, e é menor que a etiqueta "num"
                     if ((datadst[posB] != 0) &&
                         (labeltable[datadst[posB]] < num))
                         num = labeltable[datadst[posB]];
-                    // Se C está marcado, e é menor que a etiqueta "num"
                     if ((datadst[posC] != 0) &&
                         (labeltable[datadst[posC]] < num))
                         num = labeltable[datadst[posC]];
-                    // Se D está marcado, e é menor que a etiqueta "num"
                     if ((datadst[posD] != 0) &&
                         (labeltable[datadst[posD]] < num))
                         num = labeltable[datadst[posD]];
 
-                    // Atribui a etiqueta ao pixel
                     datadst[posX] = num;
                     labeltable[num] = num;
 
-                    // Actualiza a tabela de etiquetas
                     if (datadst[posA] != 0) {
                         if (labeltable[datadst[posA]] != num) {
                             for (tmplabel = labeltable[datadst[posA]], a = 1;
@@ -536,10 +447,9 @@ OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
         }
     }
 
-    // Volta a etiquetar a imagem
     for (y = 1; y < height - 1; y++) {
         for (x = 1; x < width - 1; x++) {
-            posX = y * bytesperline + x * channels; // X
+            posX = y * bytesperline + x * channels;
 
             if (datadst[posX] != 0) {
                 datadst[posX] = labeltable[datadst[posX]];
@@ -547,30 +457,23 @@ OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
         }
     }
 
-    // Contagem do número de blobs
-    // Passo 1: Eliminar, da tabela, etiquetas repetidas
     for (a = 1; a < label - 1; a++) {
         for (b = a + 1; b < label; b++) {
             if (labeltable[a] == labeltable[b])
                 labeltable[b] = 0;
         }
     }
-    // Passo 2: Conta etiquetas e organiza a tabela de etiquetas, para que não
-    // hajam valores vazios (zero) entre etiquetas
     *nlabels = 0;
     for (a = 1; a < label; a++) {
         if (labeltable[a] != 0) {
-            labeltable[*nlabels] =
-                labeltable[a]; // Organiza tabela de etiquetas
-            (*nlabels)++;      // Conta etiquetas
+            labeltable[*nlabels] = labeltable[a];
+            (*nlabels)++;
         }
     }
 
-    // Se não há blobs
     if (*nlabels == 0)
         return NULL;
 
-    // Cria lista de blobs (objectos) e preenche a etiqueta
     blobs = (OVC *)calloc((*nlabels), sizeof(OVC));
     if (blobs != NULL) {
         for (a = 0; a < (*nlabels); a++)
@@ -592,13 +495,11 @@ int vc_binary_blob_info(IVC *src, OVC *blobs, int nblobs) {
     int xmin, ymin, xmax, ymax;
     long int sumx, sumy;
 
-    // Verificação de erros
     if ((src->width <= 0) || (src->height <= 0) || (src->data == NULL))
         return 0;
     if (channels != 1)
         return 0;
 
-    // Conta área de cada blob
     for (i = 0; i < nblobs; i++) {
         xmin = width - 1;
         ymin = height - 1;
@@ -615,14 +516,11 @@ int vc_binary_blob_info(IVC *src, OVC *blobs, int nblobs) {
                 pos = y * bytesperline + x * channels;
 
                 if (data[pos] == blobs[i].label) {
-                    // Área
                     blobs[i].area++;
 
-                    // Centro de Gravidade
                     sumx += x;
                     sumy += y;
 
-                    // Bounding Box
                     if (xmin > x)
                         xmin = x;
                     if (ymin > y)
@@ -632,9 +530,6 @@ int vc_binary_blob_info(IVC *src, OVC *blobs, int nblobs) {
                     if (ymax < y)
                         ymax = y;
 
-                    // Perímetro
-                    // Se pelo menos um dos quatro vizinhos não pertence ao
-                    // mesmo label, então é um pixel de contorno
                     if ((data[pos - 1] != blobs[i].label) ||
                         (data[pos + 1] != blobs[i].label) ||
                         (data[pos - bytesperline] != blobs[i].label) ||
@@ -645,15 +540,11 @@ int vc_binary_blob_info(IVC *src, OVC *blobs, int nblobs) {
             }
         }
 
-        // Bounding Box
         blobs[i].x = xmin;
         blobs[i].y = ymin;
         blobs[i].width = (xmax - xmin) + 1;
         blobs[i].height = (ymax - ymin) + 1;
 
-        // Centro de Gravidade
-        // blobs[i].xc = (xmax - xmin) / 2;
-        // blobs[i].yc = (ymax - ymin) / 2;
         blobs[i].xc = sumx / MAX(blobs[i].area, 1);
         blobs[i].yc = sumy / MAX(blobs[i].area, 1);
     }

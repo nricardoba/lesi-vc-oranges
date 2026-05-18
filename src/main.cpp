@@ -27,7 +27,6 @@ void vc_timer(void) {
         std::chrono::steady_clock::duration elapsedTime =
             currentTime - previousTime;
 
-        // Tempo em segundos.
         std::chrono::duration<double> time_span =
             std::chrono::duration_cast<std::chrono::duration<double>>(
                 elapsedTime);
@@ -191,7 +190,6 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
 
     double max_dist_sq = max_match_dist * max_match_dist;
 
-    // Match detections to existing tracks
     for (int i = 0; i < ndets; i++) {
         int best_idx = -1;
         double best_dist_sq = max_dist_sq;
@@ -220,7 +218,6 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
         }
     }
 
-    // Create new tracks for unmatched detections
     for (int i = 0; i < ndets; i++) {
         if (dets[i].track_id == 0) {
             ensure_track_capacity(ntracks + 1);
@@ -245,7 +242,6 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
         }
     }
 
-    // Update missed counter
     if (track_used != NULL) {
         for (int t = 0; t < old_ntracks; t++) {
             if (!track_used[t]) {
@@ -259,7 +255,6 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
         }
     }
 
-    // Remove tracks that have been missing for too long
     int write = 0;
     for (int t = 0; t < ntracks; t++) {
         if (tracks[t].missed <= max_missed) {
@@ -282,7 +277,6 @@ static Track *find_track_by_id(int id) {
 }
 
 int main(void) {
-    // Vídeo
     char videofile[20] = "../input/video.avi";
     cv::VideoCapture capture;
     struct {
@@ -291,103 +285,68 @@ int main(void) {
         int fps;
         int nframe;
     } video;
-    // Outros
     std::string str;
     int key = 0;
 
-    // Parâmetros de segmentação HSV (ajustar conforme necessário)
     int hmin = 10, hmax = 35;
     int smin = 35, smax = 100;
     int vmin = 10, vmax = 100;
 
-    // Parâmetros de fecho/abertura binária
     int kernel = 3;
 
-    // Escala: 280 píxeis = 55 mm
     const double mm_per_px = 55.0 / 280.0;
 
-    // Filtro por área mínima do blob em mm² (ajustar conforme necessário)
-    // min_area = (PI * D^2) / 4
     const double area_min_mm2 = 2200.0;
     const int area_min_px = (int)(area_min_mm2 / (mm_per_px * mm_per_px) + 0.5);
 
-    // Parâmetros de tracking
-    const double max_match_dist = 50.0; // em píxeis
+    const double max_match_dist = 50.0;
     const int max_missed = 5;
 
-    /* Leitura de vídeo de um ficheiro */
-    /* NOTA IMPORTANTE:
-    O ficheiro video.avi deverá estar localizado no mesmo directório que o
-    ficheiro de código fonte.
-    */
     capture.open(videofile);
 
-    /* Em alternativa, abrir captura de vídeo pela Webcam #0 */
-    // capture.open(0, cv::CAP_DSHOW); // Pode-se utilizar apenas
-    // capture.open(0);
-
-    /* Verifica se foi possível abrir o ficheiro de vídeo */
     if (!capture.isOpened()) {
         std::cerr << "Erro ao abrir o ficheiro de vídeo!\n";
         return 1;
     }
 
-    /* Número total de frames no vídeo */
     video.ntotalframes = (int)capture.get(cv::CAP_PROP_FRAME_COUNT);
-    /* Frame rate do vídeo */
     video.fps = (int)capture.get(cv::CAP_PROP_FPS);
-    /* Resolução do vídeo */
     video.width = (int)capture.get(cv::CAP_PROP_FRAME_WIDTH);
     video.height = (int)capture.get(cv::CAP_PROP_FRAME_HEIGHT);
 
-    /* Cria uma janela para exibir o vídeo */
     cv::namedWindow("VC - VIDEO", cv::WINDOW_AUTOSIZE);
     cv::namedWindow("VC - VIDEO AUX", cv::WINDOW_AUTOSIZE);
 
-    /* Inicia o timer */
     vc_timer();
 
     cv::Mat frame;
     while (key != 'q') {
-        /* Leitura de uma frame do vídeo */
         capture.read(frame);
 
-        /* Verifica se conseguiu ler a frame */
         if (frame.empty())
             break;
 
-        /* Número da frame a processar */
         video.nframe = (int)capture.get(cv::CAP_PROP_POS_FRAMES);
 
-        // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-        // Faça o seu código aqui...
-        // Converte a frame de BGR (OpenCV) para RGB
         cv::Mat frame_rgb(video.height, video.width, CV_8UC3);
         swap_bgr_rgb(frame.data, (int)frame.step, frame_rgb.data,
                      (int)frame_rgb.step, video.width, video.height);
 
-        // Cria imagens IVC
         IVC *image = vc_image_new(video.width, video.height, 3, 255);
         IVC *image_hsv = vc_image_new(video.width, video.height, 3, 255);
         IVC *image_seg = vc_image_new(video.width, video.height, 1, 255);
         IVC *image_open = vc_image_new(video.width, video.height, 1, 255);
         IVC *image_labels = vc_image_new(video.width, video.height, 1, 255);
 
-        // Copia dados de imagem da estrutura cv::Mat para uma estrutura IVC
         memcpy(image->data, frame_rgb.data, video.width * video.height * 3);
 
-        // Converte RGB para HSV (cópia)
         vc_rgb_to_hsv(image, image_hsv);
 
-        // Segmentação em HSV
         vc_hsv_segmentation(image_hsv, image_seg, hmin, hmax, smin, smax, vmin,
                             vmax);
 
-        // Abertura binária (erosão seguida de dilatação)
         vc_binary_open(image_seg, image_open, kernel);
 
-        // Etiquetagem de blobs após a abertura
         int nlabels = 0;
         OVC *blobs =
             vc_binary_blob_labelling(image_open, image_labels, &nlabels);
@@ -395,8 +354,6 @@ int main(void) {
         if (blobs != NULL) {
             vc_binary_blob_info(image_labels, blobs, nlabels);
 
-            // Marcar labels que tocam nas bordas (usando a imagem binária
-            // original)
             unsigned char *data_open = (unsigned char *)image_open->data;
             unsigned char *data_labels = (unsigned char *)image_labels->data;
             int width = image_open->width;
@@ -412,7 +369,6 @@ int main(void) {
             };
 
             if (width >= 2 && height >= 2) {
-                // Borda superior (y = 0) -> vizinhança interna (y = 1)
                 for (int x = 0; x < width; x++) {
                     if (data_open[0 * bytesperline + x] != 0) {
                         mark_label(x - 1, 1);
@@ -420,8 +376,6 @@ int main(void) {
                         mark_label(x + 1, 1);
                     }
                 }
-                // Borda inferior (y = height - 1) -> vizinhança interna (y =
-                // height - 2)
                 for (int x = 0; x < width; x++) {
                     if (data_open[(height - 1) * bytesperline + x] != 0) {
                         mark_label(x - 1, height - 2);
@@ -429,7 +383,6 @@ int main(void) {
                         mark_label(x + 1, height - 2);
                     }
                 }
-                // Borda esquerda (x = 0) -> vizinhança interna (x = 1)
                 for (int y = 0; y < height; y++) {
                     if (data_open[y * bytesperline + 0] != 0) {
                         mark_label(1, y - 1);
@@ -437,8 +390,6 @@ int main(void) {
                         mark_label(1, y + 1);
                     }
                 }
-                // Borda direita (x = width - 1) -> vizinhança interna (x =
-                // width - 2)
                 for (int y = 0; y < height; y++) {
                     if (data_open[y * bytesperline + (width - 1)] != 0) {
                         mark_label(width - 2, y - 1);
@@ -449,19 +400,15 @@ int main(void) {
             }
         }
 
-        // Copia etiquetagem (IVC) para cv::Mat para visualização
         cv::Mat frame_aux(video.height, video.width, CV_8UC1);
         memcpy(frame_aux.data, image_open->data,
                video.width * video.height * 1);
 
-        // Copia dados de imagem da estrutura IVC para uma estrutura cv::Mat
         memcpy(frame_rgb.data, image->data, video.width * video.height * 3);
 
-        // Converte de RGB de volta para BGR para visualização no OpenCV
         swap_bgr_rgb(frame_rgb.data, (int)frame_rgb.step, frame.data,
                      (int)frame.step, video.width, video.height);
 
-        // Preparar deteções válidas
         Detection detections[MAX_DETECTIONS];
         int ndets = 0;
         if (blobs != NULL) {
@@ -469,7 +416,6 @@ int main(void) {
                 if (blobs[i].area < area_min_px) {
                     continue;
                 }
-                // Ignora blobs que tocam nas bordas da imagem
                 if (label_on_border[blobs[i].label]) {
                     continue;
                 }
@@ -490,10 +436,8 @@ int main(void) {
             }
         }
 
-        // Associar deteções a tracks (persistência entre frames)
         assign_tracks(detections, ndets, max_match_dist, max_missed, mm_per_px);
 
-        // Desenha bounding boxes, centros e info dos blobs com ID persistente
         for (int i = 0; i < ndets; i++) {
             Detection *det = &detections[i];
             Track *tr = find_track_by_id(det->track_id);
@@ -511,8 +455,7 @@ int main(void) {
                 perimeter_mm = (double)det->perimeter_px * mm_per_px;
                 diameter_mm =
                     (area_mm2 > 0.0)
-                        ? (2.0 * std::sqrt(area_mm2 /
-                                           std::acos(-1.0))) // acos(-1.0) == PI
+                        ? (2.0 * std::sqrt(area_mm2 / std::acos(-1.0)))
                         : 0.0;
                 calibre = calibre_from_diameter(diameter_mm);
             }
@@ -553,16 +496,12 @@ int main(void) {
             free(blobs);
         }
 
-        // Liberta a memória das imagens IVC que haviam sido criadas
         vc_image_free(image);
         vc_image_free(image_hsv);
         vc_image_free(image_seg);
         vc_image_free(image_open);
         vc_image_free(image_labels);
 
-        // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-        /* Exemplo de inserção texto na frame */
         str = std::string("RESOLUCAO: ")
                   .append(std::to_string(video.width))
                   .append("x")
@@ -599,25 +538,19 @@ int main(void) {
         cv::putText(frame, str, cv::Point(20, 150), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(255, 255, 255), 1);
 
-        /* Exibe a frame (tamanho original) */
         cv::imshow("VC - VIDEO", frame);
         cv::imshow("VC - VIDEO AUX", frame_aux);
 
-        /* Sai da aplicação, se o utilizador premir a tecla 'q' */
         key = cv::waitKey(1);
     }
 
-    /* Para o timer e exibe o tempo decorrido */
     vc_timer();
 
-    /* Fecha a janela */
     cv::destroyWindow("VC - VIDEO");
     cv::destroyWindow("VC - VIDEO AUX");
 
-    /* Fecha o ficheiro de vídeo */
     capture.release();
 
-    /* Limpa tracks */
     if (tracks != NULL) {
         free(tracks);
         tracks = NULL;
