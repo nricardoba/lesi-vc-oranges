@@ -50,9 +50,9 @@ int main(void) {
     int key = 0;
 
     // Parâmetros de segmentação HSV (ajustar conforme necessário)
-    int hmin = 80, hmax = 160;
-    int smin = 20, smax = 100;
-    int vmin = 20, vmax = 100;
+    int hmin = 15, hmax = 35;
+    int smin = 45, smax = 100;
+    int vmin = 40, vmax = 100;
 
     /* Leitura de vídeo de um ficheiro */
     /* NOTA IMPORTANTE:
