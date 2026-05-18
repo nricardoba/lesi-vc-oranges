@@ -1,10 +1,12 @@
 #include <chrono>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/opencv.hpp>
 #include <opencv2/videoio.hpp>
+#include <sstream>
 #include <string>
 
 extern "C" {
@@ -60,6 +62,9 @@ int main(void) {
 
     // Filtro por área mínima do blob (ajustar conforme necessário)
     int area_min = 10000;
+
+    // Escala: 280 píxeis = 55 mm
+    const double mm_per_px = 55.0 / 280.0;
 
     /* Leitura de vídeo de um ficheiro */
     /* NOTA IMPORTANTE:
@@ -163,11 +168,15 @@ int main(void) {
                               cv::Scalar(0, 255, 0), 2);
                 cv::circle(frame, cv::Point(blobs[i].xc, blobs[i].yc), 3,
                            cv::Scalar(0, 0, 255), -1);
-                std::string blob_info =
-                    std::string("A:")
-                        .append(std::to_string(blobs[i].area))
-                        .append(" P:")
-                        .append(std::to_string(blobs[i].perimeter));
+                double area_mm2 =
+                    static_cast<double>(blobs[i].area) * mm_per_px * mm_per_px;
+                double perimeter_mm =
+                    static_cast<double>(blobs[i].perimeter) * mm_per_px;
+                std::ostringstream info_stream;
+                info_stream << std::fixed << std::setprecision(1)
+                            << "A:" << area_mm2 << "mm2 "
+                            << "P:" << perimeter_mm << "mm";
+                std::string blob_info = info_stream.str();
                 int text_y = blobs[i].y - 5;
                 if (text_y < 10) {
                     text_y = blobs[i].y + 15;
