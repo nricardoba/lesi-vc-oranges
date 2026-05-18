@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <iomanip>
@@ -9,7 +8,6 @@
 #include <opencv2/videoio.hpp>
 #include <sstream>
 #include <string>
-#include <vector>
 
 extern "C" {
 #include "vc.h"
@@ -40,6 +38,128 @@ void vc_timer(void) {
     }
 }
 
+#define MAX_DETECTIONS 256
+
+typedef struct {
+    int x, y, width, height;
+    int xc, yc;
+    double area_mm2;
+    double perimeter_mm;
+    int track_id;
+} Detection;
+
+typedef struct {
+    int id;
+    int xc, yc;
+    int missed;
+} Track;
+
+static Track *tracks = NULL;
+static int ntracks = 0;
+static int tracks_cap = 0;
+static int next_track_id = 1;
+
+static void ensure_track_capacity(int needed) {
+    if (needed <= tracks_cap)
+        return;
+
+    int new_cap = (tracks_cap == 0) ? 16 : tracks_cap * 2;
+    while (new_cap < needed)
+        new_cap *= 2;
+
+    Track *new_tracks = (Track *)realloc(tracks, new_cap * sizeof(Track));
+    if (new_tracks == NULL)
+        return;
+
+    tracks = new_tracks;
+    tracks_cap = new_cap;
+}
+
+static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
+                          int max_missed) {
+    int old_ntracks = ntracks;
+    int *track_used = NULL;
+
+    if (old_ntracks > 0) {
+        track_used = (int *)calloc(old_ntracks, sizeof(int));
+        if (track_used == NULL) {
+            old_ntracks = 0;
+        }
+    }
+
+    double max_dist_sq = max_match_dist * max_match_dist;
+
+    // Match detections to existing tracks
+    for (int i = 0; i < ndets; i++) {
+        int best_idx = -1;
+        double best_dist_sq = max_dist_sq;
+
+        for (int t = 0; t < old_ntracks; t++) {
+            if (track_used != NULL && track_used[t])
+                continue;
+            double dx = (double)(dets[i].xc - tracks[t].xc);
+            double dy = (double)(dets[i].yc - tracks[t].yc);
+            double dist_sq = dx * dx + dy * dy;
+            if (dist_sq < best_dist_sq) {
+                best_dist_sq = dist_sq;
+                best_idx = t;
+            }
+        }
+
+        if (best_idx >= 0) {
+            tracks[best_idx].xc = dets[i].xc;
+            tracks[best_idx].yc = dets[i].yc;
+            tracks[best_idx].missed = 0;
+            if (track_used != NULL)
+                track_used[best_idx] = 1;
+            dets[i].track_id = tracks[best_idx].id;
+        } else {
+            dets[i].track_id = 0;
+        }
+    }
+
+    // Create new tracks for unmatched detections
+    for (int i = 0; i < ndets; i++) {
+        if (dets[i].track_id == 0) {
+            ensure_track_capacity(ntracks + 1);
+            if (ntracks >= tracks_cap)
+                continue;
+            tracks[ntracks].id = next_track_id++;
+            tracks[ntracks].xc = dets[i].xc;
+            tracks[ntracks].yc = dets[i].yc;
+            tracks[ntracks].missed = 0;
+            dets[i].track_id = tracks[ntracks].id;
+            ntracks++;
+        }
+    }
+
+    // Update missed counter
+    if (track_used != NULL) {
+        for (int t = 0; t < old_ntracks; t++) {
+            if (!track_used[t]) {
+                tracks[t].missed++;
+            }
+        }
+        free(track_used);
+    } else {
+        for (int t = 0; t < old_ntracks; t++) {
+            tracks[t].missed++;
+        }
+    }
+
+    // Remove tracks that have been missing for too long
+    int write = 0;
+    for (int t = 0; t < ntracks; t++) {
+        if (tracks[t].missed <= max_missed) {
+            if (write != t) {
+                tracks[write] = tracks[t];
+            }
+            write++;
+        }
+    }
+    ntracks = write;
+}
+
 int main(void) {
     // Vídeo
     char videofile[20] = "../input/video.avi";
@@ -68,22 +188,7 @@ int main(void) {
     // Filtro por área mínima do blob em mm² (ajustar conforme necessário)
     const double area_min_mm2 = 3000.0;
 
-    struct Detection {
-        int x, y, width, height;
-        int xc, yc;
-        double area_mm2;
-        double perimeter_mm;
-        int track_id;
-    };
-
-    struct Track {
-        int id;
-        int xc, yc;
-        int missed;
-    };
-
-    std::vector<Track> tracks;
-    int next_track_id = 1;
+    // Parâmetros de tracking
     const double max_match_dist = 50.0; // em píxeis
     const int max_missed = 5;
 
@@ -232,9 +337,9 @@ int main(void) {
         cv::cvtColor(frame_rgb, frame, cv::COLOR_RGB2BGR);
 
         // Preparar deteções válidas
-        std::vector<Detection> detections;
+        Detection detections[MAX_DETECTIONS];
+        int ndets = 0;
         if (blobs != NULL) {
-            detections.reserve(nlabels);
             for (int i = 0; i < nlabels; i++) {
                 double area_mm2 =
                     static_cast<double>(blobs[i].area) * mm_per_px * mm_per_px;
@@ -247,79 +352,45 @@ int main(void) {
                 }
                 double perimeter_mm =
                     static_cast<double>(blobs[i].perimeter) * mm_per_px;
-                Detection det{blobs[i].x,      blobs[i].y,   blobs[i].width,
-                              blobs[i].height, blobs[i].xc,  blobs[i].yc,
-                              area_mm2,        perimeter_mm, -1};
-                detections.push_back(det);
+                if (ndets < MAX_DETECTIONS) {
+                    Detection det;
+                    det.x = blobs[i].x;
+                    det.y = blobs[i].y;
+                    det.width = blobs[i].width;
+                    det.height = blobs[i].height;
+                    det.xc = blobs[i].xc;
+                    det.yc = blobs[i].yc;
+                    det.area_mm2 = area_mm2;
+                    det.perimeter_mm = perimeter_mm;
+                    det.track_id = 0;
+                    detections[ndets] = det;
+                    ndets++;
+                }
             }
         }
 
         // Associar deteções a tracks (persistência entre frames)
-        std::vector<bool> track_used(tracks.size(), false);
-        const double max_match_dist_sq = max_match_dist * max_match_dist;
-
-        for (size_t i = 0; i < detections.size(); i++) {
-            int best_idx = -1;
-            double best_dist_sq = max_match_dist_sq;
-            for (size_t t = 0; t < tracks.size(); t++) {
-                if (track_used[t]) {
-                    continue;
-                }
-                double dx =
-                    static_cast<double>(detections[i].xc - tracks[t].xc);
-                double dy =
-                    static_cast<double>(detections[i].yc - tracks[t].yc);
-                double dist_sq = dx * dx + dy * dy;
-                if (dist_sq < best_dist_sq) {
-                    best_dist_sq = dist_sq;
-                    best_idx = static_cast<int>(t);
-                }
-            }
-
-            if (best_idx == -1) {
-                Track new_track{next_track_id++, detections[i].xc,
-                                detections[i].yc, 0};
-                tracks.push_back(new_track);
-                track_used.push_back(true);
-                detections[i].track_id = new_track.id;
-            } else {
-                tracks[best_idx].xc = detections[i].xc;
-                tracks[best_idx].yc = detections[i].yc;
-                tracks[best_idx].missed = 0;
-                track_used[best_idx] = true;
-                detections[i].track_id = tracks[best_idx].id;
-            }
-        }
-
-        for (size_t t = 0; t < tracks.size(); t++) {
-            if (!track_used[t]) {
-                tracks[t].missed++;
-            }
-        }
-
-        tracks.erase(std::remove_if(tracks.begin(), tracks.end(),
-                                    [&](const Track &tr) {
-                                        return tr.missed > max_missed;
-                                    }),
-                     tracks.end());
+        assign_tracks(detections, ndets, max_match_dist, max_missed);
 
         // Desenha bounding boxes, centros e info dos blobs com ID persistente
-        for (const auto &det : detections) {
-            cv::rectangle(frame, cv::Rect(det.x, det.y, det.width, det.height),
+        for (int i = 0; i < ndets; i++) {
+            Detection *det = &detections[i];
+            cv::rectangle(frame,
+                          cv::Rect(det->x, det->y, det->width, det->height),
                           cv::Scalar(0, 255, 0), 2);
-            cv::circle(frame, cv::Point(det.xc, det.yc), 3,
+            cv::circle(frame, cv::Point(det->xc, det->yc), 3,
                        cv::Scalar(0, 0, 255), -1);
             std::ostringstream info_stream;
             info_stream << std::fixed << std::setprecision(1)
-                        << "ID:" << det.track_id << " A:" << det.area_mm2
+                        << "ID:" << det->track_id << " A:" << det->area_mm2
                         << "mm2 "
-                        << "P:" << det.perimeter_mm << "mm";
+                        << "P:" << det->perimeter_mm << "mm";
             std::string blob_info = info_stream.str();
-            int text_y = det.y - 5;
+            int text_y = det->y - 5;
             if (text_y < 10) {
-                text_y = det.y + 15;
+                text_y = det->y + 15;
             }
-            cv::putText(frame, blob_info, cv::Point(det.x, text_y),
+            cv::putText(frame, blob_info, cv::Point(det->x, text_y),
                         cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
         }
 
