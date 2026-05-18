@@ -163,6 +163,18 @@ int main(void) {
                               cv::Scalar(0, 255, 0), 2);
                 cv::circle(frame, cv::Point(blobs[i].xc, blobs[i].yc), 3,
                            cv::Scalar(0, 0, 255), -1);
+                std::string blob_info =
+                    std::string("A:")
+                        .append(std::to_string(blobs[i].area))
+                        .append(" P:")
+                        .append(std::to_string(blobs[i].perimeter));
+                int text_y = blobs[i].y - 5;
+                if (text_y < 10) {
+                    text_y = blobs[i].y + 15;
+                }
+                cv::putText(frame, blob_info, cv::Point(blobs[i].x, text_y),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.5,
+                            cv::Scalar(255, 255, 0), 1);
             }
             free(blobs);
         }
