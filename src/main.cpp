@@ -58,6 +58,9 @@ int main(void) {
     // Parâmetros de fecho/abertura binária
     int kernel = 3;
 
+    // Filtro por área mínima do blob (ajustar conforme necessário)
+    int area_min = 200;
+
     /* Leitura de vídeo de um ficheiro */
     /* NOTA IMPORTANTE:
     O ficheiro video.avi deverá estar localizado no mesmo directório que o
@@ -151,6 +154,9 @@ int main(void) {
         // Desenha bounding boxes e centros de gravidade dos blobs
         if (blobs != NULL) {
             for (int i = 0; i < nlabels; i++) {
+                if (blobs[i].area < area_min) {
+                    continue;
+                }
                 cv::rectangle(frame,
                               cv::Rect(blobs[i].x, blobs[i].y, blobs[i].width,
                                        blobs[i].height),
