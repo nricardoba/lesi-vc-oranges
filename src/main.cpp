@@ -182,8 +182,8 @@ int main(void) {
                     text_y = blobs[i].y + 15;
                 }
                 cv::putText(frame, blob_info, cv::Point(blobs[i].x, text_y),
-                            cv::FONT_HERSHEY_SIMPLEX, 0.5,
-                            cv::Scalar(255, 255, 0), 1);
+                            cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0),
+                            1);
             }
             free(blobs);
         }
