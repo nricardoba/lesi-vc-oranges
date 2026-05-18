@@ -43,8 +43,8 @@ void vc_timer(void) {
 typedef struct {
     int x, y, width, height;
     int xc, yc;
-    double area_mm2;
-    double perimeter_mm;
+    int area_px;
+    int perimeter_px;
     int track_id;
 } Detection;
 
@@ -52,6 +52,8 @@ typedef struct {
     int id;
     int xc, yc;
     int missed;
+    double area_mm2;
+    double perimeter_mm;
 } Track;
 
 static Track *tracks = NULL;
@@ -76,7 +78,7 @@ static void ensure_track_capacity(int needed) {
 }
 
 static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
-                          int max_missed) {
+                          int max_missed, double mm_per_px) {
     int old_ntracks = ntracks;
     int *track_used = NULL;
 
@@ -128,6 +130,10 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
             tracks[ntracks].xc = dets[i].xc;
             tracks[ntracks].yc = dets[i].yc;
             tracks[ntracks].missed = 0;
+            tracks[ntracks].area_mm2 =
+                (double)dets[i].area_px * mm_per_px * mm_per_px;
+            tracks[ntracks].perimeter_mm =
+                (double)dets[i].perimeter_px * mm_per_px;
             dets[i].track_id = tracks[ntracks].id;
             ntracks++;
         }
@@ -160,6 +166,15 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
     ntracks = write;
 }
 
+static Track *find_track_by_id(int id) {
+    for (int i = 0; i < ntracks; i++) {
+        if (tracks[i].id == id) {
+            return &tracks[i];
+        }
+    }
+    return NULL;
+}
+
 int main(void) {
     // Vídeo
     char videofile[20] = "../input/video.avi";
@@ -187,6 +202,7 @@ int main(void) {
 
     // Filtro por área mínima do blob em mm² (ajustar conforme necessário)
     const double area_min_mm2 = 3000.0;
+    const int area_min_px = (int)(area_min_mm2 / (mm_per_px * mm_per_px) + 0.5);
 
     // Parâmetros de tracking
     const double max_match_dist = 50.0; // em píxeis
@@ -341,17 +357,13 @@ int main(void) {
         int ndets = 0;
         if (blobs != NULL) {
             for (int i = 0; i < nlabels; i++) {
-                double area_mm2 =
-                    static_cast<double>(blobs[i].area) * mm_per_px * mm_per_px;
-                if (area_mm2 < area_min_mm2) {
+                if (blobs[i].area < area_min_px) {
                     continue;
                 }
                 // Ignora blobs que tocam nas bordas da imagem
                 if (label_on_border[blobs[i].label]) {
                     continue;
                 }
-                double perimeter_mm =
-                    static_cast<double>(blobs[i].perimeter) * mm_per_px;
                 if (ndets < MAX_DETECTIONS) {
                     Detection det;
                     det.x = blobs[i].x;
@@ -360,8 +372,8 @@ int main(void) {
                     det.height = blobs[i].height;
                     det.xc = blobs[i].xc;
                     det.yc = blobs[i].yc;
-                    det.area_mm2 = area_mm2;
-                    det.perimeter_mm = perimeter_mm;
+                    det.area_px = blobs[i].area;
+                    det.perimeter_px = blobs[i].perimeter;
                     det.track_id = 0;
                     detections[ndets] = det;
                     ndets++;
@@ -370,11 +382,21 @@ int main(void) {
         }
 
         // Associar deteções a tracks (persistência entre frames)
-        assign_tracks(detections, ndets, max_match_dist, max_missed);
+        assign_tracks(detections, ndets, max_match_dist, max_missed, mm_per_px);
 
         // Desenha bounding boxes, centros e info dos blobs com ID persistente
         for (int i = 0; i < ndets; i++) {
             Detection *det = &detections[i];
+            Track *tr = find_track_by_id(det->track_id);
+            double area_mm2 = 0.0;
+            double perimeter_mm = 0.0;
+            if (tr != NULL) {
+                area_mm2 = tr->area_mm2;
+                perimeter_mm = tr->perimeter_mm;
+            } else {
+                area_mm2 = (double)det->area_px * mm_per_px * mm_per_px;
+                perimeter_mm = (double)det->perimeter_px * mm_per_px;
+            }
             cv::rectangle(frame,
                           cv::Rect(det->x, det->y, det->width, det->height),
                           cv::Scalar(0, 255, 0), 2);
@@ -382,9 +404,8 @@ int main(void) {
                        cv::Scalar(0, 0, 255), -1);
             std::ostringstream info_stream;
             info_stream << std::fixed << std::setprecision(1)
-                        << "ID:" << det->track_id << " A:" << det->area_mm2
-                        << "mm2 "
-                        << "P:" << det->perimeter_mm << "mm";
+                        << "ID:" << det->track_id << " A:" << area_mm2 << "mm2 "
+                        << "P:" << perimeter_mm << "mm";
             std::string blob_info = info_stream.str();
             int text_y = det->y - 5;
             if (text_y < 10) {
