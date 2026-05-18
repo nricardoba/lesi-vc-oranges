@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <iomanip>
@@ -8,6 +9,7 @@
 #include <opencv2/videoio.hpp>
 #include <sstream>
 #include <string>
+#include <vector>
 
 extern "C" {
 #include "vc.h"
@@ -65,6 +67,25 @@ int main(void) {
 
     // Filtro por área mínima do blob em mm² (ajustar conforme necessário)
     const double area_min_mm2 = 3000.0;
+
+    struct Detection {
+        int x, y, width, height;
+        int xc, yc;
+        double area_mm2;
+        double perimeter_mm;
+        int track_id;
+    };
+
+    struct Track {
+        int id;
+        int xc, yc;
+        int missed;
+    };
+
+    std::vector<Track> tracks;
+    int next_track_id = 1;
+    const double max_match_dist = 50.0; // em píxeis
+    const int max_missed = 5;
 
     /* Leitura de vídeo de um ficheiro */
     /* NOTA IMPORTANTE:
@@ -210,8 +231,10 @@ int main(void) {
         // Converte de RGB de volta para BGR para visualização no OpenCV
         cv::cvtColor(frame_rgb, frame, cv::COLOR_RGB2BGR);
 
-        // Desenha bounding boxes e centros de gravidade dos blobs
+        // Preparar deteções válidas
+        std::vector<Detection> detections;
         if (blobs != NULL) {
+            detections.reserve(nlabels);
             for (int i = 0; i < nlabels; i++) {
                 double area_mm2 =
                     static_cast<double>(blobs[i].area) * mm_per_px * mm_per_px;
@@ -222,27 +245,85 @@ int main(void) {
                 if (label_on_border[blobs[i].label]) {
                     continue;
                 }
-                cv::rectangle(frame,
-                              cv::Rect(blobs[i].x, blobs[i].y, blobs[i].width,
-                                       blobs[i].height),
-                              cv::Scalar(0, 255, 0), 2);
-                cv::circle(frame, cv::Point(blobs[i].xc, blobs[i].yc), 3,
-                           cv::Scalar(0, 0, 255), -1);
                 double perimeter_mm =
                     static_cast<double>(blobs[i].perimeter) * mm_per_px;
-                std::ostringstream info_stream;
-                info_stream << std::fixed << std::setprecision(1)
-                            << "A:" << area_mm2 << "mm2 "
-                            << "P:" << perimeter_mm << "mm";
-                std::string blob_info = info_stream.str();
-                int text_y = blobs[i].y - 5;
-                if (text_y < 10) {
-                    text_y = blobs[i].y + 15;
-                }
-                cv::putText(frame, blob_info, cv::Point(blobs[i].x, text_y),
-                            cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0),
-                            1);
+                Detection det{blobs[i].x,      blobs[i].y,   blobs[i].width,
+                              blobs[i].height, blobs[i].xc,  blobs[i].yc,
+                              area_mm2,        perimeter_mm, -1};
+                detections.push_back(det);
             }
+        }
+
+        // Associar deteções a tracks (persistência entre frames)
+        std::vector<bool> track_used(tracks.size(), false);
+        const double max_match_dist_sq = max_match_dist * max_match_dist;
+
+        for (size_t i = 0; i < detections.size(); i++) {
+            int best_idx = -1;
+            double best_dist_sq = max_match_dist_sq;
+            for (size_t t = 0; t < tracks.size(); t++) {
+                if (track_used[t]) {
+                    continue;
+                }
+                double dx =
+                    static_cast<double>(detections[i].xc - tracks[t].xc);
+                double dy =
+                    static_cast<double>(detections[i].yc - tracks[t].yc);
+                double dist_sq = dx * dx + dy * dy;
+                if (dist_sq < best_dist_sq) {
+                    best_dist_sq = dist_sq;
+                    best_idx = static_cast<int>(t);
+                }
+            }
+
+            if (best_idx == -1) {
+                Track new_track{next_track_id++, detections[i].xc,
+                                detections[i].yc, 0};
+                tracks.push_back(new_track);
+                track_used.push_back(true);
+                detections[i].track_id = new_track.id;
+            } else {
+                tracks[best_idx].xc = detections[i].xc;
+                tracks[best_idx].yc = detections[i].yc;
+                tracks[best_idx].missed = 0;
+                track_used[best_idx] = true;
+                detections[i].track_id = tracks[best_idx].id;
+            }
+        }
+
+        for (size_t t = 0; t < tracks.size(); t++) {
+            if (!track_used[t]) {
+                tracks[t].missed++;
+            }
+        }
+
+        tracks.erase(std::remove_if(tracks.begin(), tracks.end(),
+                                    [&](const Track &tr) {
+                                        return tr.missed > max_missed;
+                                    }),
+                     tracks.end());
+
+        // Desenha bounding boxes, centros e info dos blobs com ID persistente
+        for (const auto &det : detections) {
+            cv::rectangle(frame, cv::Rect(det.x, det.y, det.width, det.height),
+                          cv::Scalar(0, 255, 0), 2);
+            cv::circle(frame, cv::Point(det.xc, det.yc), 3,
+                       cv::Scalar(0, 0, 255), -1);
+            std::ostringstream info_stream;
+            info_stream << std::fixed << std::setprecision(1)
+                        << "ID:" << det.track_id << " A:" << det.area_mm2
+                        << "mm2 "
+                        << "P:" << det.perimeter_mm << "mm";
+            std::string blob_info = info_stream.str();
+            int text_y = det.y - 5;
+            if (text_y < 10) {
+                text_y = det.y + 15;
+            }
+            cv::putText(frame, blob_info, cv::Point(det.x, text_y),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
+        }
+
+        if (blobs != NULL) {
             free(blobs);
         }
 
