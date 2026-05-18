@@ -49,6 +49,11 @@ int main(void) {
     std::string str;
     int key = 0;
 
+    // Parâmetros de segmentação HSV (ajustar conforme necessário)
+    int hmin = 80, hmax = 160;
+    int smin = 20, smax = 100;
+    int vmin = 20, vmax = 100;
+
     /* Leitura de vídeo de um ficheiro */
     /* NOTA IMPORTANTE:
     O ficheiro video.avi deverá estar localizado no mesmo directório que o
@@ -103,6 +108,7 @@ int main(void) {
         // Cria imagens IVC
         IVC *image = vc_image_new(video.width, video.height, 3, 255);
         IVC *image_hsv = vc_image_new(video.width, video.height, 3, 255);
+        IVC *image_seg = vc_image_new(video.width, video.height, 1, 255);
 
         // Copia dados de imagem da estrutura cv::Mat para uma estrutura IVC
         memcpy(image->data, frame_rgb.data, video.width * video.height * 3);
@@ -110,9 +116,13 @@ int main(void) {
         // Converte RGB para HSV (cópia)
         vc_rgb_to_hsv(image, image_hsv);
 
-        // Copia HSV (IVC) para cv::Mat para visualização
-        cv::Mat frame_aux(video.height, video.width, CV_8UC3);
-        memcpy(frame_aux.data, image_hsv->data, video.width * video.height * 3);
+        // Segmentação em HSV
+        vc_hsv_segmentation(image_hsv, image_seg, hmin, hmax, smin, smax, vmin,
+                            vmax);
+
+        // Copia segmentação (IVC) para cv::Mat para visualização
+        cv::Mat frame_aux(video.height, video.width, CV_8UC1);
+        memcpy(frame_aux.data, image_seg->data, video.width * video.height * 1);
 
         // Copia dados de imagem da estrutura IVC para uma estrutura cv::Mat
         memcpy(frame_rgb.data, image->data, video.width * video.height * 3);
@@ -123,6 +133,7 @@ int main(void) {
         // Liberta a memória das imagens IVC que haviam sido criadas
         vc_image_free(image);
         vc_image_free(image_hsv);
+        vc_image_free(image_seg);
 
         // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
