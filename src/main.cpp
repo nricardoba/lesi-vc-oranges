@@ -60,11 +60,11 @@ int main(void) {
     // Parâmetros de fecho/abertura binária
     int kernel = 3;
 
-    // Filtro por área mínima do blob (ajustar conforme necessário)
-    int area_min = 10000;
-
     // Escala: 280 píxeis = 55 mm
     const double mm_per_px = 55.0 / 280.0;
+
+    // Filtro por área mínima do blob em mm² (ajustar conforme necessário)
+    const double area_min_mm2 = 400.0;
 
     /* Leitura de vídeo de um ficheiro */
     /* NOTA IMPORTANTE:
@@ -159,7 +159,9 @@ int main(void) {
         // Desenha bounding boxes e centros de gravidade dos blobs
         if (blobs != NULL) {
             for (int i = 0; i < nlabels; i++) {
-                if (blobs[i].area < area_min) {
+                double area_mm2 =
+                    static_cast<double>(blobs[i].area) * mm_per_px * mm_per_px;
+                if (area_mm2 < area_min_mm2) {
                     continue;
                 }
                 cv::rectangle(frame,
@@ -168,8 +170,6 @@ int main(void) {
                               cv::Scalar(0, 255, 0), 2);
                 cv::circle(frame, cv::Point(blobs[i].xc, blobs[i].yc), 3,
                            cv::Scalar(0, 0, 255), -1);
-                double area_mm2 =
-                    static_cast<double>(blobs[i].area) * mm_per_px * mm_per_px;
                 double perimeter_mm =
                     static_cast<double>(blobs[i].perimeter) * mm_per_px;
                 std::ostringstream info_stream;
