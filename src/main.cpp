@@ -50,8 +50,8 @@ int main(void) {
     int key = 0;
 
     // Parâmetros de segmentação HSV (ajustar conforme necessário)
-    int hmin = 12, hmax = 42;
-    int smin = 40, smax = 100;
+    int hmin = 10, hmax = 35;
+    int smin = 35, smax = 100;
     int vmin = 10, vmax = 100;
 
     // Parâmetros de fecho/abertura binária
