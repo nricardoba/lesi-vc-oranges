@@ -481,8 +481,8 @@ int main(void) {
                         : 0.0;
                 calibre = calibre_from_diameter(diameter_mm);
             }
-            cv::rectangle(frame,
-                          cv::Rect(det->x, det->y, det->width, det->height),
+            cv::rectangle(frame, cv::Point(det->x, det->y),
+                          cv::Point(det->x + det->width, det->y + det->height),
                           cv::Scalar(0, 255, 0), 2);
             cv::circle(frame, cv::Point(det->xc, det->yc), 3,
                        cv::Scalar(0, 0, 255), -1);
