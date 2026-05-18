@@ -76,6 +76,7 @@ int main(void) {
 
     /* Cria uma janela para exibir o vídeo */
     cv::namedWindow("VC - VIDEO", cv::WINDOW_AUTOSIZE);
+    cv::namedWindow("VC - VIDEO AUX", cv::WINDOW_AUTOSIZE);
 
     /* Inicia o timer */
     vc_timer();
@@ -108,6 +109,10 @@ int main(void) {
 
         // Converte RGB para HSV (cópia)
         vc_rgb_to_hsv(image, image_hsv);
+
+        // Copia HSV (IVC) para cv::Mat para visualização
+        cv::Mat frame_aux(video.height, video.width, CV_8UC3);
+        memcpy(frame_aux.data, image_hsv->data, video.width * video.height * 3);
 
         // Copia dados de imagem da estrutura IVC para uma estrutura cv::Mat
         memcpy(frame_rgb.data, image->data, video.width * video.height * 3);
@@ -149,6 +154,7 @@ int main(void) {
 
         /* Exibe a frame */
         cv::imshow("VC - VIDEO", frame);
+        cv::imshow("VC - VIDEO AUX", frame_aux);
 
         /* Sai da aplicação, se o utilizador premir a tecla 'q' */
         key = cv::waitKey(1);
@@ -159,6 +165,7 @@ int main(void) {
 
     /* Fecha a janela */
     cv::destroyWindow("VC - VIDEO");
+    cv::destroyWindow("VC - VIDEO AUX");
 
     /* Fecha o ficheiro de vídeo */
     capture.release();
