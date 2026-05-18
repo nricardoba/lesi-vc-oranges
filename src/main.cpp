@@ -59,8 +59,6 @@ typedef struct {
     int calibre;
 } Track;
 
-static const double kPi = 3.14159265358979323846;
-
 static Track *tracks = NULL;
 static int ntracks = 0;
 static int tracks_cap = 0;
@@ -170,7 +168,10 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
             tracks[ntracks].perimeter_mm =
                 (double)dets[i].perimeter_px * mm_per_px;
             tracks[ntracks].diameter_mm =
-                (area_mm2 > 0.0) ? (2.0 * std::sqrt(area_mm2 / kPi)) : 0.0;
+                (area_mm2 > 0.0)
+                    ? (2.0 * std::sqrt(area_mm2 /
+                                       std::acos(-1.0))) // acos(-1.0) == PI
+                    : 0.0;
             tracks[ntracks].calibre =
                 calibre_from_diameter(tracks[ntracks].diameter_mm);
             dets[i].track_id = tracks[ntracks].id;
@@ -240,6 +241,7 @@ int main(void) {
     const double mm_per_px = 55.0 / 280.0;
 
     // Filtro por área mínima do blob em mm² (ajustar conforme necessário)
+    // min_area = (PI * D^2) / 4
     const double area_min_mm2 = 2200.0;
     const int area_min_px = (int)(area_min_mm2 / (mm_per_px * mm_per_px) + 0.5);
 
@@ -440,7 +442,10 @@ int main(void) {
                 area_mm2 = (double)det->area_px * mm_per_px * mm_per_px;
                 perimeter_mm = (double)det->perimeter_px * mm_per_px;
                 diameter_mm =
-                    (area_mm2 > 0.0) ? (2.0 * std::sqrt(area_mm2 / kPi)) : 0.0;
+                    (area_mm2 > 0.0)
+                        ? (2.0 * std::sqrt(area_mm2 /
+                                           std::acos(-1.0))) // acos(-1.0) == PI
+                        : 0.0;
                 calibre = calibre_from_diameter(diameter_mm);
             }
             cv::rectangle(frame,
