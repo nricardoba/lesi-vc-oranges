@@ -52,7 +52,7 @@ int main(void) {
     // Parâmetros de segmentação HSV (ajustar conforme necessário)
     int hmin = 12, hmax = 42;
     int smin = 40, smax = 100;
-    int vmin = 30, vmax = 100;
+    int vmin = 10, vmax = 100;
 
     // Parâmetros de fecho/abertura binária
     int kernel = 3;
@@ -113,7 +113,6 @@ int main(void) {
         IVC *image_hsv = vc_image_new(video.width, video.height, 3, 255);
         IVC *image_seg = vc_image_new(video.width, video.height, 1, 255);
         IVC *image_close = vc_image_new(video.width, video.height, 1, 255);
-        IVC *image_open = vc_image_new(video.width, video.height, 1, 255);
 
         // Copia dados de imagem da estrutura cv::Mat para uma estrutura IVC
         memcpy(image->data, frame_rgb.data, video.width * video.height * 3);
@@ -128,12 +127,9 @@ int main(void) {
         // Fecho binário (dilatação seguida de erosão)
         vc_binary_close(image_seg, image_close, kernel);
 
-        // Abertura binária (erosão seguida de dilatação) após o fecho
-        vc_binary_open(image_close, image_open, kernel);
-
         // Copia abertura (IVC) para cv::Mat para visualização
         cv::Mat frame_aux(video.height, video.width, CV_8UC1);
-        memcpy(frame_aux.data, image_open->data,
+        memcpy(frame_aux.data, image_close->data,
                video.width * video.height * 1);
 
         // Copia dados de imagem da estrutura IVC para uma estrutura cv::Mat
@@ -147,7 +143,6 @@ int main(void) {
         vc_image_free(image_hsv);
         vc_image_free(image_seg);
         vc_image_free(image_close);
-        vc_image_free(image_open);
 
         // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
