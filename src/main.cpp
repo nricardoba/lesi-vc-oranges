@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
@@ -134,7 +135,6 @@ int main(void) {
             vc_binary_blob_labelling(image_close, image_labels, &nlabels);
         if (blobs != NULL) {
             vc_binary_blob_info(image_labels, blobs, nlabels);
-            free(blobs);
         }
 
         // Copia etiquetagem (IVC) para cv::Mat para visualização
@@ -147,6 +147,19 @@ int main(void) {
 
         // Converte de RGB de volta para BGR para visualização no OpenCV
         cv::cvtColor(frame_rgb, frame, cv::COLOR_RGB2BGR);
+
+        // Desenha bounding boxes e centros de gravidade dos blobs
+        if (blobs != NULL) {
+            for (int i = 0; i < nlabels; i++) {
+                cv::rectangle(frame,
+                              cv::Rect(blobs[i].x, blobs[i].y, blobs[i].width,
+                                       blobs[i].height),
+                              cv::Scalar(0, 255, 0), 2);
+                cv::circle(frame, cv::Point(blobs[i].xc, blobs[i].yc), 3,
+                           cv::Scalar(0, 0, 255), -1);
+            }
+            free(blobs);
+        }
 
         // Liberta a memória das imagens IVC que haviam sido criadas
         vc_image_free(image);
