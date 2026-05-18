@@ -110,6 +110,37 @@ static int calibre_from_diameter(double diameter_mm) {
     return 13;
 }
 
+static void swap_bgr_rgb(const unsigned char *src, int src_step,
+                         unsigned char *dst, int dst_step, int width,
+                         int height) {
+    if (src == NULL || dst == NULL || width <= 0 || height <= 0)
+        return;
+
+    if (src == dst && src_step == dst_step) {
+        for (int y = 0; y < height; y++) {
+            unsigned char *row = dst + y * dst_step;
+            for (int x = 0; x < width; x++) {
+                int idx = x * 3;
+                unsigned char tmp = row[idx];
+                row[idx] = row[idx + 2];
+                row[idx + 2] = tmp;
+            }
+        }
+        return;
+    }
+
+    for (int y = 0; y < height; y++) {
+        const unsigned char *src_row = src + y * src_step;
+        unsigned char *dst_row = dst + y * dst_step;
+        for (int x = 0; x < width; x++) {
+            int idx = x * 3;
+            dst_row[idx] = src_row[idx + 2];
+            dst_row[idx + 1] = src_row[idx + 1];
+            dst_row[idx + 2] = src_row[idx];
+        }
+    }
+}
+
 static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
                           int max_missed, double mm_per_px) {
     int old_ntracks = ntracks;
@@ -297,8 +328,9 @@ int main(void) {
 
         // Faça o seu código aqui...
         // Converte a frame de BGR (OpenCV) para RGB
-        cv::Mat frame_rgb;
-        cv::cvtColor(frame, frame_rgb, cv::COLOR_BGR2RGB);
+        cv::Mat frame_rgb(video.height, video.width, CV_8UC3);
+        swap_bgr_rgb(frame.data, (int)frame.step, frame_rgb.data,
+                     (int)frame_rgb.step, video.width, video.height);
 
         // Cria imagens IVC
         IVC *image = vc_image_new(video.width, video.height, 3, 255);
@@ -391,7 +423,8 @@ int main(void) {
         memcpy(frame_rgb.data, image->data, video.width * video.height * 3);
 
         // Converte de RGB de volta para BGR para visualização no OpenCV
-        cv::cvtColor(frame_rgb, frame, cv::COLOR_RGB2BGR);
+        swap_bgr_rgb(frame_rgb.data, (int)frame_rgb.step, frame.data,
+                     (int)frame.step, video.width, video.height);
 
         // Preparar deteções válidas
         Detection detections[MAX_DETECTIONS];
