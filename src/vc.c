@@ -13,7 +13,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include "vc.h"
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
