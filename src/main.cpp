@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -54,6 +55,8 @@ typedef struct {
     int missed;
     double area_mm2;
     double perimeter_mm;
+    double diameter_mm;
+    int calibre;
 } Track;
 
 static Track *tracks = NULL;
@@ -75,6 +78,36 @@ static void ensure_track_capacity(int needed) {
 
     tracks = new_tracks;
     tracks_cap = new_cap;
+}
+
+static int calibre_from_diameter(double diameter_mm) {
+    if (diameter_mm >= 100.0)
+        return 0;
+    if (diameter_mm >= 87.0)
+        return 1;
+    if (diameter_mm >= 84.0)
+        return 2;
+    if (diameter_mm >= 81.0)
+        return 3;
+    if (diameter_mm >= 77.0)
+        return 4;
+    if (diameter_mm >= 73.0)
+        return 5;
+    if (diameter_mm >= 70.0)
+        return 6;
+    if (diameter_mm >= 67.0)
+        return 7;
+    if (diameter_mm >= 64.0)
+        return 8;
+    if (diameter_mm >= 62.0)
+        return 9;
+    if (diameter_mm >= 60.0)
+        return 10;
+    if (diameter_mm >= 58.0)
+        return 11;
+    if (diameter_mm >= 56.0)
+        return 12;
+    return 13;
 }
 
 static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
@@ -130,10 +163,17 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
             tracks[ntracks].xc = dets[i].xc;
             tracks[ntracks].yc = dets[i].yc;
             tracks[ntracks].missed = 0;
-            tracks[ntracks].area_mm2 =
-                (double)dets[i].area_px * mm_per_px * mm_per_px;
+            double area_mm2 = (double)dets[i].area_px * mm_per_px * mm_per_px;
+            tracks[ntracks].area_mm2 = area_mm2;
             tracks[ntracks].perimeter_mm =
                 (double)dets[i].perimeter_px * mm_per_px;
+            tracks[ntracks].diameter_mm =
+                (area_mm2 > 0.0)
+                    ? (2.0 * std::sqrt(area_mm2 /
+                                       std::acos(-1.0))) // acos(-1.0) == PI
+                    : 0.0;
+            tracks[ntracks].calibre =
+                calibre_from_diameter(tracks[ntracks].diameter_mm);
             dets[i].track_id = tracks[ntracks].id;
             ntracks++;
         }
@@ -201,7 +241,8 @@ int main(void) {
     const double mm_per_px = 55.0 / 280.0;
 
     // Filtro por área mínima do blob em mm² (ajustar conforme necessário)
-    const double area_min_mm2 = 3000.0;
+    // min_area = (PI * D^2) / 4
+    const double area_min_mm2 = 2200.0;
     const int area_min_px = (int)(area_min_mm2 / (mm_per_px * mm_per_px) + 0.5);
 
     // Parâmetros de tracking
@@ -390,12 +431,22 @@ int main(void) {
             Track *tr = find_track_by_id(det->track_id);
             double area_mm2 = 0.0;
             double perimeter_mm = 0.0;
+            double diameter_mm = 0.0;
+            int calibre = 0;
             if (tr != NULL) {
                 area_mm2 = tr->area_mm2;
                 perimeter_mm = tr->perimeter_mm;
+                diameter_mm = tr->diameter_mm;
+                calibre = tr->calibre;
             } else {
                 area_mm2 = (double)det->area_px * mm_per_px * mm_per_px;
                 perimeter_mm = (double)det->perimeter_px * mm_per_px;
+                diameter_mm =
+                    (area_mm2 > 0.0)
+                        ? (2.0 * std::sqrt(area_mm2 /
+                                           std::acos(-1.0))) // acos(-1.0) == PI
+                        : 0.0;
+                calibre = calibre_from_diameter(diameter_mm);
             }
             cv::rectangle(frame,
                           cv::Rect(det->x, det->y, det->width, det->height),
@@ -405,7 +456,9 @@ int main(void) {
             std::ostringstream info_stream;
             info_stream << std::fixed << std::setprecision(1)
                         << "ID:" << det->track_id << " A:" << area_mm2 << "mm2 "
-                        << "P:" << perimeter_mm << "mm";
+                        << "P:" << perimeter_mm << "mm "
+                        << "D:" << diameter_mm << "mm "
+                        << "C:" << calibre;
             std::string blob_info = info_stream.str();
             int text_y = det->y - 5;
             if (text_y < 10) {
