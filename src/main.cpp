@@ -141,6 +141,41 @@ static void swap_bgr_rgb(const unsigned char *src, int src_step,
     }
 }
 
+static void draw_circle_bgr(unsigned char *data, int width, int height,
+                            int step, int cx, int cy, int radius,
+                            unsigned char b, unsigned char g, unsigned char r,
+                            int thickness) {
+    if (data == NULL || width <= 0 || height <= 0 || radius <= 0)
+        return;
+
+    int r2 = radius * radius;
+    int inner_r = (thickness >= 0) ? (radius - thickness) : 0;
+    if (inner_r < 0)
+        inner_r = 0;
+    int inner2 = inner_r * inner_r;
+
+    for (int y = cy - radius; y <= cy + radius; y++) {
+        if (y < 0 || y >= height)
+            continue;
+        int dy = y - cy;
+        int dy2 = dy * dy;
+        for (int x = cx - radius; x <= cx + radius; x++) {
+            if (x < 0 || x >= width)
+                continue;
+            int dx = x - cx;
+            int d2 = dx * dx + dy2;
+            if (d2 > r2)
+                continue;
+            if (thickness >= 0 && d2 < inner2)
+                continue;
+            unsigned char *pixel = data + y * step + x * 3;
+            pixel[0] = b;
+            pixel[1] = g;
+            pixel[2] = r;
+        }
+    }
+}
+
 static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
                           int max_missed, double mm_per_px) {
     int old_ntracks = ntracks;
@@ -484,8 +519,8 @@ int main(void) {
             cv::rectangle(frame, cv::Point(det->x, det->y),
                           cv::Point(det->x + det->width, det->y + det->height),
                           cv::Scalar(0, 255, 0), 2);
-            cv::circle(frame, cv::Point(det->xc, det->yc), 3,
-                       cv::Scalar(0, 0, 255), -1);
+            draw_circle_bgr(frame.data, frame.cols, frame.rows, (int)frame.step,
+                            det->xc, det->yc, 3, 0, 0, 255, -1);
             std::ostringstream info_stream;
             info_stream << std::fixed << std::setprecision(1)
                         << "ID:" << det->track_id << " A:" << area_mm2 << "mm2 "
