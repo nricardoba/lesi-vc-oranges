@@ -59,7 +59,7 @@ int main(void) {
     int kernel = 3;
 
     // Filtro por área mínima do blob (ajustar conforme necessário)
-    int area_min = 200;
+    int area_min = 10000;
 
     /* Leitura de vídeo de um ficheiro */
     /* NOTA IMPORTANTE:
