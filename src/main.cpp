@@ -113,6 +113,7 @@ int main(void) {
         IVC *image_hsv = vc_image_new(video.width, video.height, 3, 255);
         IVC *image_seg = vc_image_new(video.width, video.height, 1, 255);
         IVC *image_close = vc_image_new(video.width, video.height, 1, 255);
+        IVC *image_labels = vc_image_new(video.width, video.height, 1, 255);
 
         // Copia dados de imagem da estrutura cv::Mat para uma estrutura IVC
         memcpy(image->data, frame_rgb.data, video.width * video.height * 3);
@@ -127,7 +128,16 @@ int main(void) {
         // Fecho binário (dilatação seguida de erosão)
         vc_binary_close(image_seg, image_close, kernel);
 
-        // Copia abertura (IVC) para cv::Mat para visualização
+        // Etiquetagem de blobs após o fecho
+        int nlabels = 0;
+        OVC *blobs =
+            vc_binary_blob_labelling(image_close, image_labels, &nlabels);
+        if (blobs != NULL) {
+            vc_binary_blob_info(image_labels, blobs, nlabels);
+            free(blobs);
+        }
+
+        // Copia etiquetagem (IVC) para cv::Mat para visualização
         cv::Mat frame_aux(video.height, video.width, CV_8UC1);
         memcpy(frame_aux.data, image_close->data,
                video.width * video.height * 1);
@@ -143,6 +153,7 @@ int main(void) {
         vc_image_free(image_hsv);
         vc_image_free(image_seg);
         vc_image_free(image_close);
+        vc_image_free(image_labels);
 
         // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
