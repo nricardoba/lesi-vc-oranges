@@ -92,23 +92,34 @@ int main(void) {
         /* Número da frame a processar */
         video.nframe = (int)capture.get(cv::CAP_PROP_POS_FRAMES);
 
+        // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
         // Faça o seu código aqui...
         // Converte a frame de BGR (OpenCV) para RGB
         cv::Mat frame_rgb;
         cv::cvtColor(frame, frame_rgb, cv::COLOR_BGR2RGB);
-        // Cria uma nova imagem IVC
+
+        // Cria imagens IVC
         IVC *image = vc_image_new(video.width, video.height, 3, 255);
+        IVC *image_hsv = vc_image_new(video.width, video.height, 3, 255);
+
         // Copia dados de imagem da estrutura cv::Mat para uma estrutura IVC
         memcpy(image->data, frame_rgb.data, video.width * video.height * 3);
-        // Executa uma função da nossa biblioteca vc
-        vc_rgb_get_green(image);
+
+        // Converte RGB para HSV (cópia)
+        vc_rgb_to_hsv(image, image_hsv);
+
         // Copia dados de imagem da estrutura IVC para uma estrutura cv::Mat
         memcpy(frame_rgb.data, image->data, video.width * video.height * 3);
+
         // Converte de RGB de volta para BGR para visualização no OpenCV
         cv::cvtColor(frame_rgb, frame, cv::COLOR_RGB2BGR);
-        // Liberta a memória da imagem IVC que havia sido criada
+
+        // Liberta a memória das imagens IVC que haviam sido criadas
         vc_image_free(image);
-        // +++++++++++++++++++++++++
+        vc_image_free(image_hsv);
+
+        // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
         /* Exemplo de inserção texto na frame */
         str = std::string("RESOLUCAO: ")
