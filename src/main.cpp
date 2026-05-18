@@ -38,6 +38,143 @@ void vc_timer(void) {
     }
 }
 
+#define MAX_DETECTIONS 256
+
+typedef struct {
+    int x, y, width, height;
+    int xc, yc;
+    int area_px;
+    int perimeter_px;
+    int track_id;
+} Detection;
+
+typedef struct {
+    int id;
+    int xc, yc;
+    int missed;
+    double area_mm2;
+    double perimeter_mm;
+} Track;
+
+static Track *tracks = NULL;
+static int ntracks = 0;
+static int tracks_cap = 0;
+static int next_track_id = 1;
+
+static void ensure_track_capacity(int needed) {
+    if (needed <= tracks_cap)
+        return;
+
+    int new_cap = (tracks_cap == 0) ? 16 : tracks_cap * 2;
+    while (new_cap < needed)
+        new_cap *= 2;
+
+    Track *new_tracks = (Track *)realloc(tracks, new_cap * sizeof(Track));
+    if (new_tracks == NULL)
+        return;
+
+    tracks = new_tracks;
+    tracks_cap = new_cap;
+}
+
+static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
+                          int max_missed, double mm_per_px) {
+    int old_ntracks = ntracks;
+    int *track_used = NULL;
+
+    if (old_ntracks > 0) {
+        track_used = (int *)calloc(old_ntracks, sizeof(int));
+        if (track_used == NULL) {
+            old_ntracks = 0;
+        }
+    }
+
+    double max_dist_sq = max_match_dist * max_match_dist;
+
+    // Match detections to existing tracks
+    for (int i = 0; i < ndets; i++) {
+        int best_idx = -1;
+        double best_dist_sq = max_dist_sq;
+
+        for (int t = 0; t < old_ntracks; t++) {
+            if (track_used != NULL && track_used[t])
+                continue;
+            double dx = (double)(dets[i].xc - tracks[t].xc);
+            double dy = (double)(dets[i].yc - tracks[t].yc);
+            double dist_sq = dx * dx + dy * dy;
+            if (dist_sq < best_dist_sq) {
+                best_dist_sq = dist_sq;
+                best_idx = t;
+            }
+        }
+
+        if (best_idx >= 0) {
+            tracks[best_idx].xc = dets[i].xc;
+            tracks[best_idx].yc = dets[i].yc;
+            tracks[best_idx].missed = 0;
+            if (track_used != NULL)
+                track_used[best_idx] = 1;
+            dets[i].track_id = tracks[best_idx].id;
+        } else {
+            dets[i].track_id = 0;
+        }
+    }
+
+    // Create new tracks for unmatched detections
+    for (int i = 0; i < ndets; i++) {
+        if (dets[i].track_id == 0) {
+            ensure_track_capacity(ntracks + 1);
+            if (ntracks >= tracks_cap)
+                continue;
+            tracks[ntracks].id = next_track_id++;
+            tracks[ntracks].xc = dets[i].xc;
+            tracks[ntracks].yc = dets[i].yc;
+            tracks[ntracks].missed = 0;
+            tracks[ntracks].area_mm2 =
+                (double)dets[i].area_px * mm_per_px * mm_per_px;
+            tracks[ntracks].perimeter_mm =
+                (double)dets[i].perimeter_px * mm_per_px;
+            dets[i].track_id = tracks[ntracks].id;
+            ntracks++;
+        }
+    }
+
+    // Update missed counter
+    if (track_used != NULL) {
+        for (int t = 0; t < old_ntracks; t++) {
+            if (!track_used[t]) {
+                tracks[t].missed++;
+            }
+        }
+        free(track_used);
+    } else {
+        for (int t = 0; t < old_ntracks; t++) {
+            tracks[t].missed++;
+        }
+    }
+
+    // Remove tracks that have been missing for too long
+    int write = 0;
+    for (int t = 0; t < ntracks; t++) {
+        if (tracks[t].missed <= max_missed) {
+            if (write != t) {
+                tracks[write] = tracks[t];
+            }
+            write++;
+        }
+    }
+    ntracks = write;
+}
+
+static Track *find_track_by_id(int id) {
+    for (int i = 0; i < ntracks; i++) {
+        if (tracks[i].id == id) {
+            return &tracks[i];
+        }
+    }
+    return NULL;
+}
+
 int main(void) {
     // Vídeo
     char videofile[20] = "../input/video.avi";
@@ -65,9 +202,11 @@ int main(void) {
 
     // Filtro por área mínima do blob em mm² (ajustar conforme necessário)
     const double area_min_mm2 = 3000.0;
-    const double area_extra_max_mm2 = 4500.0;
-    const double area_cat1_max_mm2 = 6500.0;
-    const double area_cat2_max_mm2 = 8500.0;
+    const int area_min_px = (int)(area_min_mm2 / (mm_per_px * mm_per_px) + 0.5);
+
+    // Parâmetros de tracking
+    const double max_match_dist = 50.0; // em píxeis
+    const int max_missed = 5;
 
     /* Leitura de vídeo de um ficheiro */
     /* NOTA IMPORTANTE:
@@ -223,64 +362,71 @@ int main(void) {
         // Converte de RGB de volta para BGR para visualização no OpenCV
         cv::cvtColor(frame_rgb, frame, cv::COLOR_RGB2BGR);
 
-        // Desenha bounding boxes e centros de gravidade dos blobs
+        // Preparar deteções válidas
+        Detection detections[MAX_DETECTIONS];
+        int ndets = 0;
         if (blobs != NULL) {
             int category_counts[4] = {0, 0, 0, 0};
             for (int i = 0; i < nlabels; i++) {
-                double area_mm2 =
-                    static_cast<double>(blobs[i].area) * mm_per_px * mm_per_px;
-                if (area_mm2 < area_min_mm2) {
+                if (blobs[i].area < area_min_px) {
                     continue;
                 }
                 // Ignora blobs que tocam nas bordas da imagem
                 if (label_on_border[blobs[i].label]) {
                     continue;
                 }
-
-                int category = 3;
-                if (area_mm2 < area_extra_max_mm2)
-                    category = 0;
-                else if (area_mm2 < area_cat1_max_mm2)
-                    category = 1;
-                else if (area_mm2 < area_cat2_max_mm2)
-                    category = 2;
-                category_counts[category]++;
-
-                const char *category_name = classify_blob(area_mm2);
-                cv::rectangle(frame,
-                              cv::Rect(blobs[i].x, blobs[i].y, blobs[i].width,
-                                       blobs[i].height),
-                              cv::Scalar(0, 255, 0), 2);
-                cv::circle(frame, cv::Point(blobs[i].xc, blobs[i].yc), 3,
-                           cv::Scalar(0, 0, 255), -1);
-                double perimeter_mm =
-                    static_cast<double>(blobs[i].perimeter) * mm_per_px;
-                std::ostringstream info_stream;
-                info_stream << std::fixed << std::setprecision(1)
-                            << category_name << " "
-                            << "A:" << area_mm2 << "mm2 "
-                            << "P:" << perimeter_mm << "mm";
-                std::string blob_info = info_stream.str();
-                int text_y = blobs[i].y - 5;
-                if (text_y < 10) {
-                    text_y = blobs[i].y + 15;
+                if (ndets < MAX_DETECTIONS) {
+                    Detection det;
+                    det.x = blobs[i].x;
+                    det.y = blobs[i].y;
+                    det.width = blobs[i].width;
+                    det.height = blobs[i].height;
+                    det.xc = blobs[i].xc;
+                    det.yc = blobs[i].yc;
+                    det.area_px = blobs[i].area;
+                    det.perimeter_px = blobs[i].perimeter;
+                    det.track_id = 0;
+                    detections[ndets] = det;
+                    ndets++;
                 }
-                cv::putText(frame, blob_info, cv::Point(blobs[i].x, text_y),
-                            cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0),
-                            1);
             }
+        }
 
-            std::string counts_text =
-                "EXTRA: " + std::to_string(category_counts[0]) +
-                "  C1: " + std::to_string(category_counts[1]) +
-                "  C2: " + std::to_string(category_counts[2]) +
-                "  C3: " + std::to_string(category_counts[3]);
-            cv::putText(frame, counts_text, cv::Point(20, 130),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
-            cv::putText(frame, counts_text, cv::Point(20, 130),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.8,
-                        cv::Scalar(255, 255, 255), 1);
+        // Associar deteções a tracks (persistência entre frames)
+        assign_tracks(detections, ndets, max_match_dist, max_missed, mm_per_px);
 
+        // Desenha bounding boxes, centros e info dos blobs com ID persistente
+        for (int i = 0; i < ndets; i++) {
+            Detection *det = &detections[i];
+            Track *tr = find_track_by_id(det->track_id);
+            double area_mm2 = 0.0;
+            double perimeter_mm = 0.0;
+            if (tr != NULL) {
+                area_mm2 = tr->area_mm2;
+                perimeter_mm = tr->perimeter_mm;
+            } else {
+                area_mm2 = (double)det->area_px * mm_per_px * mm_per_px;
+                perimeter_mm = (double)det->perimeter_px * mm_per_px;
+            }
+            cv::rectangle(frame,
+                          cv::Rect(det->x, det->y, det->width, det->height),
+                          cv::Scalar(0, 255, 0), 2);
+            cv::circle(frame, cv::Point(det->xc, det->yc), 3,
+                       cv::Scalar(0, 0, 255), -1);
+            std::ostringstream info_stream;
+            info_stream << std::fixed << std::setprecision(1)
+                        << "ID:" << det->track_id << " A:" << area_mm2 << "mm2 "
+                        << "P:" << perimeter_mm << "mm";
+            std::string blob_info = info_stream.str();
+            int text_y = det->y - 5;
+            if (text_y < 10) {
+                text_y = det->y + 15;
+            }
+            cv::putText(frame, blob_info, cv::Point(det->x, text_y),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
+        }
+
+        if (blobs != NULL) {
             free(blobs);
         }
 
@@ -318,6 +464,17 @@ int main(void) {
                     1.0, cv::Scalar(0, 0, 0), 2);
         cv::putText(frame, str, cv::Point(20, 100), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(255, 255, 255), 1);
+        str = std::string("TOTAL DE LARANJAS: ")
+                  .append(std::to_string(next_track_id - 1));
+        cv::putText(frame, str, cv::Point(20, 125), cv::FONT_HERSHEY_SIMPLEX,
+                    1.0, cv::Scalar(0, 0, 0), 2);
+        cv::putText(frame, str, cv::Point(20, 125), cv::FONT_HERSHEY_SIMPLEX,
+                    1.0, cv::Scalar(255, 255, 255), 1);
+        str = std::string("LARANJAS NA FRAME: ").append(std::to_string(ndets));
+        cv::putText(frame, str, cv::Point(20, 150), cv::FONT_HERSHEY_SIMPLEX,
+                    1.0, cv::Scalar(0, 0, 0), 2);
+        cv::putText(frame, str, cv::Point(20, 150), cv::FONT_HERSHEY_SIMPLEX,
+                    1.0, cv::Scalar(255, 255, 255), 1);
 
         /* Define manualmente o tamanho das janelas (via redimensionamento da
          * imagem) */
@@ -347,6 +504,15 @@ int main(void) {
 
     /* Fecha o ficheiro de vídeo */
     capture.release();
+
+    /* Limpa tracks */
+    if (tracks != NULL) {
+        free(tracks);
+        tracks = NULL;
+    }
+    ntracks = 0;
+    tracks_cap = 0;
+    next_track_id = 1;
 
     return 0;
 }
