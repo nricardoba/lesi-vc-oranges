@@ -141,8 +141,62 @@ int main(void) {
         int nlabels = 0;
         OVC *blobs =
             vc_binary_blob_labelling(image_close, image_labels, &nlabels);
+        bool label_on_border[256] = {false};
         if (blobs != NULL) {
             vc_binary_blob_info(image_labels, blobs, nlabels);
+
+            // Marcar labels que tocam nas bordas (usando a imagem binária
+            // original)
+            unsigned char *data_close = (unsigned char *)image_close->data;
+            unsigned char *data_labels = (unsigned char *)image_labels->data;
+            int width = image_close->width;
+            int height = image_close->height;
+            int bytesperline = image_close->bytesperline;
+
+            auto mark_label = [&](int x, int y) {
+                if (x < 0 || x >= width || y < 0 || y >= height)
+                    return;
+                unsigned char label = data_labels[y * bytesperline + x];
+                if (label != 0)
+                    label_on_border[label] = true;
+            };
+
+            if (width >= 2 && height >= 2) {
+                // Borda superior (y = 0) -> vizinhança interna (y = 1)
+                for (int x = 0; x < width; x++) {
+                    if (data_close[0 * bytesperline + x] != 0) {
+                        mark_label(x - 1, 1);
+                        mark_label(x, 1);
+                        mark_label(x + 1, 1);
+                    }
+                }
+                // Borda inferior (y = height - 1) -> vizinhança interna (y =
+                // height - 2)
+                for (int x = 0; x < width; x++) {
+                    if (data_close[(height - 1) * bytesperline + x] != 0) {
+                        mark_label(x - 1, height - 2);
+                        mark_label(x, height - 2);
+                        mark_label(x + 1, height - 2);
+                    }
+                }
+                // Borda esquerda (x = 0) -> vizinhança interna (x = 1)
+                for (int y = 0; y < height; y++) {
+                    if (data_close[y * bytesperline + 0] != 0) {
+                        mark_label(1, y - 1);
+                        mark_label(1, y);
+                        mark_label(1, y + 1);
+                    }
+                }
+                // Borda direita (x = width - 1) -> vizinhança interna (x =
+                // width - 2)
+                for (int y = 0; y < height; y++) {
+                    if (data_close[y * bytesperline + (width - 1)] != 0) {
+                        mark_label(width - 2, y - 1);
+                        mark_label(width - 2, y);
+                        mark_label(width - 2, y + 1);
+                    }
+                }
+            }
         }
 
         // Copia etiquetagem (IVC) para cv::Mat para visualização
@@ -165,9 +219,7 @@ int main(void) {
                     continue;
                 }
                 // Ignora blobs que tocam nas bordas da imagem
-                if (blobs[i].x <= 0 || blobs[i].y <= 0 ||
-                    (blobs[i].x + blobs[i].width) >= video.width ||
-                    (blobs[i].y + blobs[i].height) >= video.height) {
+                if (label_on_border[blobs[i].label]) {
                     continue;
                 }
                 cv::rectangle(frame,
