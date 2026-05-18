@@ -93,7 +93,6 @@ int main(void) {
         video.nframe = (int)capture.get(cv::CAP_PROP_POS_FRAMES);
 
         // Faça o seu código aqui...
-        /*
         // Cria uma nova imagem IVC
         IVC *image = vc_image_new(video.width, video.height, 3, 255);
         // Copia dados de imagem da estrutura cv::Mat para uma estrutura IVC
@@ -104,7 +103,6 @@ int main(void) {
         memcpy(frame.data, image->data, video.width * video.height * 3);
         // Liberta a memória da imagem IVC que havia sido criada
         vc_image_free(image);
-        */
         // +++++++++++++++++++++++++
 
         /* Exemplo de inserção texto na frame */
