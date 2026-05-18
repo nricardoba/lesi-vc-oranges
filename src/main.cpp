@@ -462,5 +462,14 @@ int main(void) {
     /* Fecha o ficheiro de vídeo */
     capture.release();
 
+    /* Limpa tracks */
+    if (tracks != NULL) {
+        free(tracks);
+        tracks = NULL;
+    }
+    ntracks = 0;
+    tracks_cap = 0;
+    next_track_id = 1;
+
     return 0;
 }
