@@ -32,8 +32,8 @@ void vc_timer(void) {
                 elapsedTime);
         double nseconds = time_span.count();
 
-        std::cout << "Tempo decorrido: " << nseconds << "segundos" << std::endl;
-        std::cout << "Pressione qualquer tecla para continuar...\n";
+        std::cout << "Elapsed time: " << nseconds << " seconds" << std::endl;
+        std::cout << "Press Enter to continue...\n";
         std::cin.get();
     }
 }
@@ -55,7 +55,7 @@ typedef struct {
     double area_mm2;
     double perimeter_mm;
     double diameter_mm;
-    int calibre;
+    int size_class;
     int printed;
 } Track;
 
@@ -80,7 +80,7 @@ static void ensure_track_capacity(int needed) {
     tracks_cap = new_cap;
 }
 
-static int calibre_from_diameter(double diameter_mm) {
+static int size_class_from_diameter(double diameter_mm) {
     if (diameter_mm >= 100.0)
         return 0;
     if (diameter_mm >= 87.0)
@@ -234,8 +234,8 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
             tracks[ntracks].diameter_mm =
                 (area_mm2 > 0.0) ? (2.0 * std::sqrt(area_mm2 / std::acos(-1.0)))
                                  : 0.0;
-            tracks[ntracks].calibre =
-                calibre_from_diameter(tracks[ntracks].diameter_mm);
+            tracks[ntracks].size_class =
+                size_class_from_diameter(tracks[ntracks].diameter_mm);
             tracks[ntracks].printed = 0;
             dets[i].track_id = tracks[ntracks].id;
             ntracks++;
@@ -305,7 +305,7 @@ int main(void) {
     capture.open(videofile);
 
     if (!capture.isOpened()) {
-        std::cerr << "Erro ao abrir o ficheiro de vídeo!\n";
+        std::cerr << "Failed to open the video file!\n";
         return 1;
     }
 
@@ -314,8 +314,8 @@ int main(void) {
     video.width = (int)capture.get(cv::CAP_PROP_FRAME_WIDTH);
     video.height = (int)capture.get(cv::CAP_PROP_FRAME_HEIGHT);
 
-    cv::namedWindow("VC - VIDEO", cv::WINDOW_AUTOSIZE);
-    cv::namedWindow("VC - VIDEO AUX", cv::WINDOW_AUTOSIZE);
+    cv::namedWindow("CV - Video", cv::WINDOW_AUTOSIZE);
+    cv::namedWindow("CV - Segmentation", cv::WINDOW_AUTOSIZE);
 
     vc_timer();
 
@@ -444,12 +444,12 @@ int main(void) {
             double area_mm2 = 0.0;
             double perimeter_mm = 0.0;
             double diameter_mm = 0.0;
-            int calibre = 0;
+            int size_class = 0;
             if (tr != NULL) {
                 area_mm2 = tr->area_mm2;
                 perimeter_mm = tr->perimeter_mm;
                 diameter_mm = tr->diameter_mm;
-                calibre = tr->calibre;
+                size_class = tr->size_class;
             } else {
                 area_mm2 = (double)det->area_px * mm_per_px * mm_per_px;
                 perimeter_mm = (double)det->perimeter_px * mm_per_px;
@@ -457,7 +457,7 @@ int main(void) {
                     (area_mm2 > 0.0)
                         ? (2.0 * std::sqrt(area_mm2 / std::acos(-1.0)))
                         : 0.0;
-                calibre = calibre_from_diameter(diameter_mm);
+                size_class = size_class_from_diameter(diameter_mm);
             }
             cv::rectangle(frame, cv::Point(det->x, det->y),
                           cv::Point(det->x + det->width, det->y + det->height),
@@ -469,7 +469,7 @@ int main(void) {
                         << "ID:" << det->track_id << " A:" << area_mm2 << "mm2 "
                         << "P:" << perimeter_mm << "mm "
                         << "D:" << diameter_mm << "mm "
-                        << "C:" << calibre;
+                        << "S:" << size_class;
             std::string blob_info = info_stream.str();
             int text_y = det->y - 5;
             if (text_y < 10) {
@@ -483,7 +483,7 @@ int main(void) {
                 term_stream << std::fixed << std::setprecision(1)
                             << "ID:" << det->track_id << " A:" << area_mm2
                             << "mm2 P:" << perimeter_mm
-                            << "mm D:" << diameter_mm << "mm C:" << calibre
+                            << "mm D:" << diameter_mm << "mm S:" << size_class
                             << " bbox: (" << det->x << "," << det->y << ","
                             << det->width << "," << det->height << ") center: ("
                             << det->xc << "," << det->yc << ")";
@@ -502,7 +502,7 @@ int main(void) {
         vc_image_free(image_open);
         vc_image_free(image_labels);
 
-        str = std::string("RESOLUCAO: ")
+        str = std::string("RESOLUTION: ")
                   .append(std::to_string(video.width))
                   .append("x")
                   .append(std::to_string(video.height));
@@ -510,7 +510,7 @@ int main(void) {
                     1.0, cv::Scalar(0, 0, 0), 2);
         cv::putText(frame, str, cv::Point(20, 25), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(255, 255, 255), 1);
-        str = std::string("TOTAL DE FRAMES: ")
+        str = std::string("TOTAL FRAMES: ")
                   .append(std::to_string(video.ntotalframes));
         cv::putText(frame, str, cv::Point(20, 50), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(0, 0, 0), 2);
@@ -521,33 +521,34 @@ int main(void) {
                     1.0, cv::Scalar(0, 0, 0), 2);
         cv::putText(frame, str, cv::Point(20, 75), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(255, 255, 255), 1);
-        str = std::string("N. DA FRAME: ").append(std::to_string(video.nframe));
+        str =
+            std::string("FRAME NUMBER: ").append(std::to_string(video.nframe));
         cv::putText(frame, str, cv::Point(20, 100), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(0, 0, 0), 2);
         cv::putText(frame, str, cv::Point(20, 100), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(255, 255, 255), 1);
-        str = std::string("TOTAL DE LARANJAS: ")
+        str = std::string("TOTAL ORANGES: ")
                   .append(std::to_string(next_track_id - 1));
         cv::putText(frame, str, cv::Point(20, 125), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(0, 0, 0), 2);
         cv::putText(frame, str, cv::Point(20, 125), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(255, 255, 255), 1);
-        str = std::string("LARANJAS NA FRAME: ").append(std::to_string(ndets));
+        str = std::string("ORANGES IN FRAME: ").append(std::to_string(ndets));
         cv::putText(frame, str, cv::Point(20, 150), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(0, 0, 0), 2);
         cv::putText(frame, str, cv::Point(20, 150), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(255, 255, 255), 1);
 
-        cv::imshow("VC - VIDEO", frame);
-        cv::imshow("VC - VIDEO AUX", frame_aux);
+        cv::imshow("CV - Video", frame);
+        cv::imshow("CV - Segmentation", frame_aux);
 
         key = cv::waitKey(1);
     }
 
     vc_timer();
 
-    cv::destroyWindow("VC - VIDEO");
-    cv::destroyWindow("VC - VIDEO AUX");
+    cv::destroyWindow("CV - Video");
+    cv::destroyWindow("CV - Segmentation");
 
     capture.release();
 
