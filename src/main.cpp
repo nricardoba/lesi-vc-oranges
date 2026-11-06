@@ -1,3 +1,5 @@
+// Detect, measure, classify, and track oranges in a video using HSV
+// segmentation.
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -10,10 +12,13 @@
 #include <sstream>
 #include <string>
 
+// Use C linkage for the custom image-processing library.
 extern "C" {
 #include "vc.h"
 }
 
+// Start timing on the first call; later calls report elapsed time and wait for
+// Enter.
 void vc_timer(void) {
     static bool running = false;
     static std::chrono::steady_clock::time_point previousTime =
@@ -40,6 +45,7 @@ void vc_timer(void) {
 
 #define MAX_DETECTIONS 256
 
+// A single-frame observation, with geometry measured in pixels.
 typedef struct {
     int x, y, width, height;
     int xc, yc;
@@ -48,22 +54,26 @@ typedef struct {
     int track_id;
 } Detection;
 
+// Persistent identity and measurements captured when an orange is first
+// tracked.
 typedef struct {
     int id;
     int xc, yc;
-    int missed;
+    int missed; // Consecutive frames without a matching detection.
     double area_mm2;
     double perimeter_mm;
     double diameter_mm;
     int size_class;
-    int printed;
+    int printed; // Prevent repeated terminal output for the same track.
 } Track;
 
 static Track *tracks = NULL;
 static int ntracks = 0;
 static int tracks_cap = 0;
+// IDs are never reused during playback, even after tracks expire.
 static int next_track_id = 1;
 
+// Grow geometrically; leave the existing allocation intact if realloc fails.
 static void ensure_track_capacity(int needed) {
     if (needed <= tracks_cap)
         return;
@@ -80,6 +90,8 @@ static void ensure_track_capacity(int needed) {
     tracks_cap = new_cap;
 }
 
+// Map diameter thresholds to size classes; smaller class numbers mean larger
+// fruit.
 static int size_class_from_diameter(double diameter_mm) {
     if (diameter_mm >= 100.0)
         return 0;
@@ -110,6 +122,8 @@ static int size_class_from_diameter(double diameter_mm) {
     return 13;
 }
 
+// Exchange red and blue channels while respecting each buffer's row stride.
+// Identical source and destination buffers are also supported.
 static void swap_bgr_rgb(const unsigned char *src, int src_step,
                          unsigned char *dst, int dst_step, int width,
                          int height) {
@@ -141,6 +155,7 @@ static void swap_bgr_rgb(const unsigned char *src, int src_step,
     }
 }
 
+// Draw directly into a BGR buffer; negative thickness produces a filled circle.
 static void draw_circle_bgr(unsigned char *data, int width, int height,
                             int step, int cx, int cy, int radius,
                             unsigned char b, unsigned char g, unsigned char r,
@@ -148,6 +163,7 @@ static void draw_circle_bgr(unsigned char *data, int width, int height,
     if (data == NULL || width <= 0 || height <= 0 || radius <= 0)
         return;
 
+    // Squared distances avoid square roots when testing the circular boundary.
     int r2 = radius * radius;
     int inner_r = (thickness >= 0) ? (radius - thickness) : 0;
     if (inner_r < 0)
@@ -176,8 +192,12 @@ static void draw_circle_bgr(unsigned char *data, int width, int height,
     }
 }
 
+// Greedily match detections to nearby tracks, then create and retire
+// identities.
 static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
                           int max_missed, double mm_per_px) {
+    // Only tracks from previous frames can participate in this frame's
+    // matching.
     int old_ntracks = ntracks;
     int *track_used = NULL;
 
@@ -188,6 +208,7 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
         }
     }
 
+    // Each previous track can be assigned at most once, in detection order.
     double max_dist_sq = max_match_dist * max_match_dist;
 
     for (int i = 0; i < ndets; i++) {
@@ -218,6 +239,8 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
         }
     }
 
+    // Unmatched detections receive a new ID and retain their initial
+    // measurements.
     for (int i = 0; i < ndets; i++) {
         if (dets[i].track_id == 0) {
             ensure_track_capacity(ntracks + 1);
@@ -231,6 +254,7 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
             tracks[ntracks].area_mm2 = area_mm2;
             tracks[ntracks].perimeter_mm =
                 (double)dets[i].perimeter_px * mm_per_px;
+            // Estimate diameter from a circle with the same segmented area.
             tracks[ntracks].diameter_mm =
                 (area_mm2 > 0.0) ? (2.0 * std::sqrt(area_mm2 / std::acos(-1.0)))
                                  : 0.0;
@@ -242,6 +266,8 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
         }
     }
 
+    // Keep unmatched tracks briefly so short detection gaps do not force new
+    // IDs.
     if (track_used != NULL) {
         for (int t = 0; t < old_ntracks; t++) {
             if (!track_used[t]) {
@@ -255,6 +281,7 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
         }
     }
 
+    // Compact active tracks in place after removing those missing for too long.
     int write = 0;
     for (int t = 0; t < ntracks; t++) {
         if (tracks[t].missed <= max_missed) {
@@ -267,6 +294,7 @@ static void assign_tracks(Detection *dets, int ndets, double max_match_dist,
     ntracks = write;
 }
 
+// Return the active track with this persistent ID, or NULL if none exists.
 static Track *find_track_by_id(int id) {
     for (int i = 0; i < ntracks; i++) {
         if (tracks[i].id == id) {
@@ -288,17 +316,23 @@ int main(void) {
     std::string str;
     int key = 0;
 
+    // Orange-color thresholds: hue in degrees, saturation and value in percent.
     int hmin = 10, hmax = 35;
     int smin = 35, smax = 100;
     int vmin = 10, vmax = 100;
 
+    // Opening removes small foreground noise with a square neighborhood.
     int kernel = 3;
 
+    // Spatial calibration: a 55 mm reference spans 280 pixels.
     const double mm_per_px = 55.0 / 280.0;
 
+    // Convert the physical area cutoff to pixels, rounding to the nearest
+    // integer.
     const double area_min_mm2 = 2200.0;
     const int area_min_px = (int)(area_min_mm2 / (mm_per_px * mm_per_px) + 0.5);
 
+    // Match within 50 pixels and tolerate up to five consecutive missed frames.
     const double max_match_dist = 50.0;
     const int max_missed = 5;
 
@@ -328,6 +362,8 @@ int main(void) {
 
         video.nframe = (int)capture.get(cv::CAP_PROP_POS_FRAMES);
 
+        // OpenCV supplies BGR pixels, but the custom HSV conversion expects
+        // RGB.
         cv::Mat frame_rgb(video.height, video.width, CV_8UC3);
         swap_bgr_rgb(frame.data, (int)frame.step, frame_rgb.data,
                      (int)frame_rgb.step, video.width, video.height);
@@ -340,6 +376,7 @@ int main(void) {
 
         memcpy(image->data, frame_rgb.data, video.width * video.height * 3);
 
+        // Build a cleaned binary mask before extracting connected components.
         vc_rgb_to_hsv(image, image_hsv);
 
         vc_hsv_segmentation(image_hsv, image_seg, hmin, hmax, smin, smax, vmin,
@@ -368,6 +405,10 @@ int main(void) {
                     label_on_border[label] = true;
             };
 
+            // Labelling clears the outermost pixels. Use the original mask and
+            // adjacent interior labels to identify fruit clipped by any frame
+            // edge. Include diagonal neighbors to match the labeller's
+            // 8-connectivity.
             if (width >= 2 && height >= 2) {
                 for (int x = 0; x < width; x++) {
                     if (data_open[0 * bytesperline + x] != 0) {
@@ -409,6 +450,8 @@ int main(void) {
         swap_bgr_rgb(frame_rgb.data, (int)frame_rgb.step, frame.data,
                      (int)frame.step, video.width, video.height);
 
+        // Reject small components and partial fruit before tracking and
+        // measuring.
         Detection detections[MAX_DETECTIONS];
         int ndets = 0;
         if (blobs != NULL) {
@@ -445,6 +488,9 @@ int main(void) {
             double perimeter_mm = 0.0;
             double diameter_mm = 0.0;
             int size_class = 0;
+            // Reuse initial measurements to keep the displayed size stable.
+            // If no track was allocated, derive measurements from this
+            // detection.
             if (tr != NULL) {
                 area_mm2 = tr->area_mm2;
                 perimeter_mm = tr->perimeter_mm;
@@ -478,6 +524,7 @@ int main(void) {
             cv::putText(frame, blob_info, cv::Point(det->x, text_y),
                         cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
 
+            // Report each tracked orange once rather than once per video frame.
             if (tr != NULL && tr->printed == 0) {
                 std::ostringstream term_stream;
                 term_stream << std::fixed << std::setprecision(1)
@@ -496,12 +543,14 @@ int main(void) {
             free(blobs);
         }
 
+        // Processing buffers belong to this frame; OpenCV owns its Mat buffers.
         vc_image_free(image);
         vc_image_free(image_hsv);
         vc_image_free(image_seg);
         vc_image_free(image_open);
         vc_image_free(image_labels);
 
+        // Layer white text over a thicker black outline for contrast.
         str = std::string("RESOLUTION: ")
                   .append(std::to_string(video.width))
                   .append("x")
@@ -527,6 +576,8 @@ int main(void) {
                     1.0, cv::Scalar(0, 0, 0), 2);
         cv::putText(frame, str, cv::Point(20, 100), cv::FONT_HERSHEY_SIMPLEX,
                     1.0, cv::Scalar(255, 255, 255), 1);
+        // This is the cumulative number of created tracks, not just active
+        // tracks.
         str = std::string("TOTAL ORANGES: ")
                   .append(std::to_string(next_track_id - 1));
         cv::putText(frame, str, cv::Point(20, 125), cv::FONT_HERSHEY_SIMPLEX,

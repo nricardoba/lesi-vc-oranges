@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Allocate an image descriptor and an uninitialized, tightly packed pixel
+ * buffer. */
 IVC *vc_image_new(int width, int height, int channels, int levels) {
     IVC *image = (IVC *)malloc(sizeof(IVC));
 
@@ -28,6 +30,8 @@ IVC *vc_image_new(int width, int height, int channels, int levels) {
     return image;
 }
 
+/* Release the pixel buffer and descriptor; return NULL for caller reassignment.
+ */
 IVC *vc_image_free(IVC *image) {
     if (image != NULL) {
         if (image->data != NULL) {
@@ -42,6 +46,7 @@ IVC *vc_image_free(IVC *image) {
     return image;
 }
 
+/* Convert a three-channel RGB image to byte-encoded HSV. */
 int vc_rgb_to_hsv(IVC *src, IVC *dst) {
     unsigned char *datasrc = (unsigned char *)src->data;
     unsigned char *datadst = (unsigned char *)dst->data;
@@ -97,6 +102,8 @@ int vc_rgb_to_hsv(IVC *src, IVC *dst) {
                 hue = 240.0f + 60.0f * (rf - gf) / delta;
             }
 
+            /* Map hue from degrees and S/V from [0, 1] to the byte range [0,
+             * 255]. */
             datadst[pos] = (unsigned char)(hue / 360.0f * 255.0f);
             datadst[pos + 1] = (unsigned char)(saturation * 255.0f);
             datadst[pos + 2] = (unsigned char)(value * 255.0f);
@@ -106,6 +113,8 @@ int vc_rgb_to_hsv(IVC *src, IVC *dst) {
     return 1;
 }
 
+/* Threshold byte-encoded HSV into a single-channel mask: 255 inside, 0 outside.
+ */
 int vc_hsv_segmentation(IVC *src, IVC *dst, int hmin, int hmax, int smin,
                         int smax, int vmin, int vmax) {
     unsigned char *datasrc = (unsigned char *)src->data;
@@ -140,6 +149,8 @@ int vc_hsv_segmentation(IVC *src, IVC *dst, int hmin, int hmax, int smin,
         (vmin > vmax))
         return 0;
 
+    /* Convert hue degrees and S/V percentages to byte thresholds, truncating
+     * down. */
     hmin_255 = (hmin * 255) / 360;
     hmax_255 = (hmax * 255) / 360;
     smin_255 = (smin * 255) / 100;
@@ -156,6 +167,8 @@ int vc_hsv_segmentation(IVC *src, IVC *dst, int hmin, int hmax, int smin,
             s = datasrc[pos_src + 1];
             v = datasrc[pos_src + 2];
 
+            /* Inclusive hue bounds wrap across 360/0 when the lower byte bound
+             * is larger. */
             if (hmin_255 <= hmax_255)
                 in_h = (h >= hmin_255 && h <= hmax_255);
             else
@@ -171,6 +184,10 @@ int vc_hsv_segmentation(IVC *src, IVC *dst, int hmin, int hmax, int smin,
     return 1;
 }
 
+/* Dilate a binary image: any nonzero neighbor makes the output pixel white.
+ * The square kernel is raised to at least 3, then rounded up to an odd size.
+ * Neighborhoods are clipped to the image; out-of-image pixels are ignored.
+ */
 int vc_binary_dilate(IVC *src, IVC *dst, int kernel) {
     unsigned char *datasrc = (unsigned char *)src->data;
     unsigned char *datadst = (unsigned char *)dst->data;
@@ -237,6 +254,10 @@ int vc_binary_dilate(IVC *src, IVC *dst, int kernel) {
     return 1;
 }
 
+/* Erode a binary image: any zero neighbor makes the output pixel black.
+ * The square kernel is raised to at least 3, then rounded up to an odd size.
+ * Neighborhoods are clipped to the image, without black padding outside it.
+ */
 int vc_binary_erode(IVC *src, IVC *dst, int kernel) {
     unsigned char *datasrc = (unsigned char *)src->data;
     unsigned char *datadst = (unsigned char *)dst->data;
@@ -303,6 +324,7 @@ int vc_binary_erode(IVC *src, IVC *dst, int kernel) {
     return 1;
 }
 
+/* Open a binary image by erosion followed by dilation with the same kernel. */
 int vc_binary_open(IVC *src, IVC *dst, int kernel) {
     IVC *tmp;
     int ret = 1;
@@ -316,6 +338,7 @@ int vc_binary_open(IVC *src, IVC *dst, int kernel) {
     if ((src->channels != 1) || (src->channels != dst->channels))
         return 0;
 
+    /* Keep erosion in a temporary image so dilation reads a complete result. */
     tmp = vc_image_new(src->width, src->height, src->channels, src->levels);
     if (tmp == NULL)
         return 0;
@@ -330,6 +353,10 @@ int vc_binary_open(IVC *src, IVC *dst, int kernel) {
     return ret;
 }
 
+/* Label 8-connected foreground components in dst and return allocated blob
+ * records. Set nlabels to the component count; the caller owns the returned
+ * array.
+ */
 OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
     unsigned char *datasrc = (unsigned char *)src->data;
     unsigned char *datadst = (unsigned char *)dst->data;
@@ -354,6 +381,7 @@ OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
     if (channels != 1)
         return NULL;
 
+    /* Copy the mask and normalize all nonzero foreground values to white. */
     memcpy(datadst, datasrc, bytesperline * height);
 
     for (i = 0, size = bytesperline * height; i < size; i++) {
@@ -361,6 +389,8 @@ OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
             datadst[i] = 255;
     }
 
+    /* Clear only the outermost pixels, not entire border-touching components.
+     */
     for (y = 0; y < height; y++) {
         datadst[y * bytesperline + 0 * channels] = 0;
         datadst[y * bytesperline + (width - 1) * channels] = 0;
@@ -372,6 +402,9 @@ OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
 
     for (y = 1; y < height - 1; y++) {
         for (x = 1; x < width - 1; x++) {
+            /* Raster scan: upper-left, upper, upper-right and left are the
+             * already visited neighbors needed for 8-connectivity.
+             */
             posA = (y - 1) * bytesperline + (x - 1) * channels;
             posB = (y - 1) * bytesperline + x * channels;
             posC = (y - 1) * bytesperline + (x + 1) * channels;
@@ -385,6 +418,8 @@ OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
                     labeltable[label] = label;
                     label++;
                 } else {
+                    /* Use the smallest representative among neighboring labels.
+                     */
                     num = 255;
 
                     if (datadst[posA] != 0)
@@ -402,6 +437,9 @@ OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
                     datadst[posX] = num;
                     labeltable[num] = num;
 
+                    /* Merge equivalent labels by updating every table entry
+                     * that shares each neighbor's former representative.
+                     */
                     if (datadst[posA] != 0) {
                         if (labeltable[datadst[posA]] != num) {
                             for (tmplabel = labeltable[datadst[posA]], a = 1;
@@ -452,11 +490,16 @@ OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
             posX = y * bytesperline + x * channels;
 
             if (datadst[posX] != 0) {
+                /* Resolve provisional pixel labels to their final
+                 * representative. */
                 datadst[posX] = labeltable[datadst[posX]];
             }
         }
     }
 
+    /* Collect unique representatives without renumbering the image labels;
+     * blob labels are unique but need not be consecutive.
+     */
     for (a = 1; a < label - 1; a++) {
         for (b = a + 1; b < label; b++) {
             if (labeltable[a] == labeltable[b])
@@ -484,6 +527,10 @@ OVC *vc_binary_blob_labelling(IVC *src, IVC *dst, int *nlabels) {
     return blobs;
 }
 
+/* Measure each listed label over the image interior: area, bounding box,
+ * boundary-pixel perimeter and integer centroid. Perimeter is accumulated,
+ * so records must have it initialized to zero before the first measurement.
+ */
 int vc_binary_blob_info(IVC *src, OVC *blobs, int nblobs) {
     unsigned char *data = (unsigned char *)src->data;
     int width = src->width;
@@ -530,6 +577,10 @@ int vc_binary_blob_info(IVC *src, OVC *blobs, int nblobs) {
                     if (ymax < y)
                         ymax = y;
 
+                    /* Count this pixel once if any 4-neighbor has another
+                     * label; this measures boundary pixels, not exposed edge
+                     * length.
+                     */
                     if ((data[pos - 1] != blobs[i].label) ||
                         (data[pos + 1] != blobs[i].label) ||
                         (data[pos - bytesperline] != blobs[i].label) ||
@@ -545,6 +596,8 @@ int vc_binary_blob_info(IVC *src, OVC *blobs, int nblobs) {
         blobs[i].width = (xmax - xmin) + 1;
         blobs[i].height = (ymax - ymin) + 1;
 
+        /* Integer division truncates the mean coordinates; MAX avoids zero
+         * division. */
         blobs[i].xc = sumx / MAX(blobs[i].area, 1);
         blobs[i].yc = sumy / MAX(blobs[i].area, 1);
     }
